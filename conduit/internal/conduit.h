@@ -21,8 +21,8 @@
 // written that implements cd::internal::ConduitImpl in its entirety.
 //
 
-#ifndef CONDUIT_CONDUIT_INTERNAL_CONDUIT_H_
-#define CONDUIT_CONDUIT_INTERNAL_CONDUIT_H_
+#ifndef CONDUIT_INTERNAL_CONDUIT_H_
+#define CONDUIT_INTERNAL_CONDUIT_H_
 
 #include <memory>
 
@@ -67,5 +67,5 @@ private:
 
 }
 
-#endif  // CONDUIT_CONDUIT_INTERNAL_CONDUIT_H_
+#endif  // CONDUIT_INTERNAL_CONDUIT_H_
 

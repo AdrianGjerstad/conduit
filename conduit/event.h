@@ -21,8 +21,8 @@
 // occurring to those file descriptors.
 //
 
-#ifndef CONDUIT_CONDUIT_EVENT_H_
-#define CONDUIT_CONDUIT_EVENT_H_
+#ifndef CONDUIT_EVENT_H_
+#define CONDUIT_EVENT_H_
 
 #include <functional>
 
@@ -93,5 +93,5 @@ private:
 
 }
 
-#endif  // CONDUIT_CONDUIT_EVENT_H_
+#endif  // CONDUIT_EVENT_H_
 

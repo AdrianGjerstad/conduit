@@ -20,8 +20,8 @@
 // events.
 //
 
-#ifndef CONDUIT_CONDUIT_CONDUIT_H_
-#define CONDUIT_CONDUIT_CONDUIT_H_
+#ifndef CONDUIT_CONDUIT_H_
+#define CONDUIT_CONDUIT_H_
 
 #include <memory>
 
@@ -64,5 +64,5 @@ private:
 
 }
 
-#endif  // CONDUIT_CONDUIT_CONDUIT_H_
+#endif  // CONDUIT_CONDUIT_H_
 
