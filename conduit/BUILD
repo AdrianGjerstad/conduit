@@ -33,3 +33,13 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+cc_library(
+    name = "promise",
+    hdrs = ["promise.h"],
+    deps = [
+        "//conduit",
+        "@abseil-cpp//absl/status/status.h",
+    ],
+    visibility = ["//visibility:public"],
+)
+
