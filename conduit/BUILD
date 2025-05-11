@@ -21,7 +21,7 @@ cc_library(
         ":event",
         "//conduit/internal:conduit",
         "@abseil-cpp//absl/status",
-        "@abseil-cpp//absl/synchronization/mutex",
+        "@abseil-cpp//absl/synchronization",
     ],
     visibility = ["//visibility:public"],
 )

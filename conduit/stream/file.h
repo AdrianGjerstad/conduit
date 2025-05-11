@@ -42,6 +42,12 @@ public:
     const std::filesystem::path& path
   );
 
+  // Retrieves a ReadFileStream for stdin.
+  //
+  // The returned stream is based on file descriptor 0, but does not own it.
+  // Therefore, at Close(), the underlying file descriptor will remain open.
+  static std::shared_ptr<ReadFileStream> Stdin(Conduit* conduit);
+
   // Sets up the necessary functionality with the given conduit to act as a
   // readable stream on the given file descriptor. It is assumed that the file
   // descriptor is non-blocking.
@@ -89,6 +95,13 @@ public:
     const std::filesystem::path& path,
     int mode = 0644
   );
+
+  // Retrieves a WriteFileStream for the associated standard stream
+  //
+  // The returned stream has static lifetime and does not own the underlying
+  // file descriptor.
+  static std::shared_ptr<WriteFileStream> Stdout(Conduit* conduit);
+  static std::shared_ptr<WriteFileStream> Stderr(Conduit* conduit);
 
   // Sets up the necessary functionality with the given conduit to act as a
   // writable stream on the given file descriptor. It is assumed that the file

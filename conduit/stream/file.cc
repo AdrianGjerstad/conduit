@@ -55,6 +55,16 @@ absl::StatusOr<std::shared_ptr<ReadFileStream>> ReadFileStream::Open(
   return std::make_shared<ReadFileStream>(conduit, fd, true);
 }
 
+std::shared_ptr<ReadFileStream> ReadFileStream::Stdin(Conduit* conduit) {
+  static std::shared_ptr<ReadFileStream> stdin_stream = nullptr;
+  
+  if (!stdin_stream) {
+    stdin_stream = std::make_shared<ReadFileStream>(conduit, 0, false);
+  }
+  
+  return stdin_stream;
+}
+
 ReadFileStream::ReadFileStream(Conduit* conduit, int fd, bool owning) :
   conduit_(conduit), fd_(fd), owned_(owning) {
   listener_ = std::make_shared<EventListener>(fd);
@@ -149,6 +159,26 @@ absl::StatusOr<std::shared_ptr<WriteFileStream>> WriteFileStream::OpenAppend(
   }
 
   return std::make_shared<WriteFileStream>(conduit, fd, true);
+}
+
+std::shared_ptr<WriteFileStream> WriteFileStream::Stdout(Conduit* conduit) {
+  static std::shared_ptr<WriteFileStream> stdout_stream = nullptr;
+  
+  if (!stdout_stream) {
+    stdout_stream = std::make_shared<WriteFileStream>(conduit, 1, false);
+  }
+  
+  return stdout_stream;
+}
+
+std::shared_ptr<WriteFileStream> WriteFileStream::Stderr(Conduit* conduit) {
+  static std::shared_ptr<WriteFileStream> stderr_stream = nullptr;
+  
+  if (!stderr_stream) {
+    stderr_stream = std::make_shared<WriteFileStream>(conduit, 2, false);
+  }
+  
+  return stderr_stream;
 }
 
 WriteFileStream::WriteFileStream(Conduit* conduit, int fd, bool owning) :
