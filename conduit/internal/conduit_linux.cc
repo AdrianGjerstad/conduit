@@ -151,6 +151,12 @@ void ConduitImpl::WaitAndProcessEvents(absl::Duration timeout) {
   struct epoll_event events[MAX_EVENTS];
   struct timespec ts_timeout = absl::ToTimespec(timeout);
 
+  if (!(listeners_.size())) {
+    // We don't have any events to process because we're not listening for any
+    // file descriptor events.
+    return;
+  }
+  
   // Refresh any changed listener sets
   for (const auto& it : listeners_) {
     if (it.second->HasListenerSetChanged()) {

@@ -22,7 +22,10 @@
 
 #include "conduit/conduit.h"
 
+#include <functional>
+
 #include "absl/status/status.h"
+#include "absl/synchronization/mutex.h"
 
 #include "conduit/event.h"
 
@@ -39,9 +42,72 @@ absl::Status Conduit::Remove(std::shared_ptr<EventListener> listener) {
   return impl_.Unregister(listener->Get(), listener);
 }
 
+void Conduit::OnNext(std::function<void()> cb) {
+  absl::WriterMutexLock lock(&cb_queue_mutex_);
+
+  cb_queue_.push(cb);
+}
+
 void Conduit::RunForever() {
-  while (true) {
-    impl_.WaitAndProcessEvents();
+  while (IsAlive()) {
+    RunCallbackQueue();
+    impl_.WaitAndProcessEvents(CalculateTimeout());
+  }
+}
+
+bool Conduit::IsAlive() {
+  {
+    absl::ReaderMutexLock lock(&cb_queue_mutex_);
+    
+    if (cb_queue_.size()) {
+      return true;
+    }
+  }
+
+  if (impl_.Listeners().size()) {
+    return true;
+  }
+
+  return false;
+}
+
+absl::Duration Conduit::CalculateTimeout() {
+  {
+    absl::ReaderMutexLock lock(&cb_queue_mutex_);
+
+    if (cb_queue_.size()) {
+      // We have outstanding callbacks. Process pending events and get out of
+      // there ASAP.
+      return absl::ZeroDuration();
+    }
+  }
+
+  // Clearly nothing else needs to be done, so we can just wait indefinitely.
+  return absl::InfiniteDuration();
+}
+
+void Conduit::RunCallbackQueue() {
+  size_t queue_size;
+  {
+    absl::ReaderMutexLock read_lock(&cb_queue_mutex_);
+
+    queue_size = cb_queue_.size();
+  }
+
+  for (size_t i = 0; i < queue_size; ++i) {
+    std::function<void()> fn;
+    {
+      absl::WriterMutexLock write_lock(&cb_queue_mutex_);
+
+      fn = cb_queue_.front();
+      cb_queue_.pop();
+    }
+
+    // NOTE: It is imperative that cb_queue_mutex_ is not held by this method
+    // when this function is called.
+    if (fn) {
+      fn();
+    }
   }
 }
 

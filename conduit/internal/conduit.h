@@ -59,6 +59,12 @@ public:
     WaitAndProcessEvents(absl::ZeroDuration());
   }
 
+  // Obtains an immutable reference to the internal listeners
+  const absl::flat_hash_map<int, std::shared_ptr<::cd::EventListener>>&
+    Listeners() const {
+    return listeners_;
+  }
+
 private:
   // Causes the underlying implementation to refresh this specific listener.
   void Refresh(int fd, std::shared_ptr<::cd::EventListener> l);
