@@ -52,11 +52,11 @@ absl::StatusOr<std::shared_ptr<ReadFileStream>> ReadFileStream::Open(
     );
   }
 
-  return std::make_shared<ReadFileStream>(conduit, fd);
+  return std::make_shared<ReadFileStream>(conduit, fd, true);
 }
 
-ReadFileStream::ReadFileStream(Conduit* conduit, int fd) : conduit_(conduit),
-  fd_(fd) {
+ReadFileStream::ReadFileStream(Conduit* conduit, int fd, bool owning) :
+  conduit_(conduit), fd_(fd), owned_(owning) {
   listener_ = std::make_shared<EventListener>(fd);
 
   // Schedule some reads to start happening.
@@ -77,7 +77,12 @@ void ReadFileStream::CloseResource() {
   // Don't care if fd is not already registered. We just want to make sure that
   // it's not.
   conduit_->Remove(listener_).IgnoreError();
-  close(fd_);
+
+  // If we don't own the file descriptor, we shouldn't be making actions like
+  // closing it.
+  if (owned_) {
+    close(fd_);
+  }
 }
 
 void ReadFileStream::DoRead() {
@@ -127,7 +132,7 @@ absl::StatusOr<std::shared_ptr<WriteFileStream>> WriteFileStream::OpenTrunc(
     );
   }
 
-  return std::make_shared<WriteFileStream>(conduit, fd);
+  return std::make_shared<WriteFileStream>(conduit, fd, true);
 }
 
 absl::StatusOr<std::shared_ptr<WriteFileStream>> WriteFileStream::OpenAppend(
@@ -143,11 +148,11 @@ absl::StatusOr<std::shared_ptr<WriteFileStream>> WriteFileStream::OpenAppend(
     );
   }
 
-  return std::make_shared<WriteFileStream>(conduit, fd);
+  return std::make_shared<WriteFileStream>(conduit, fd, true);
 }
 
-WriteFileStream::WriteFileStream(Conduit* conduit, int fd) : conduit_(conduit),
-  fd_(fd) {
+WriteFileStream::WriteFileStream(Conduit* conduit, int fd, bool owning) :
+  conduit_(conduit), fd_(fd), owned_(owning) {
   listener_ = std::make_shared<::cd::EventListener>(fd);
 
   listener_->OnHangup([this](int fd) {
@@ -191,7 +196,10 @@ size_t WriteFileStream::TryWriteData(absl::string_view data) {
 
 void WriteFileStream::CloseResource() {
   conduit_->Remove(listener_).IgnoreError();
-  close(fd_);
+
+  if (owned_) {
+    close(fd_);
+  }
 }
 
 }

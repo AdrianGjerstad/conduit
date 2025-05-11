@@ -45,7 +45,11 @@ public:
   // Sets up the necessary functionality with the given conduit to act as a
   // readable stream on the given file descriptor. It is assumed that the file
   // descriptor is non-blocking.
-  ReadFileStream(Conduit* conduit, int fd);
+  //
+  // This constructor may be called by users that want to have their own file
+  // descriptors and use them like streams. `owning` represents if the stream
+  // should take ownership of the file descriptor.
+  ReadFileStream(Conduit* conduit, int fd, bool owning = false);
   
 private:
   // Not default constructible
@@ -62,6 +66,7 @@ private:
   Conduit* conduit_;
   std::shared_ptr<EventListener> listener_;
   int fd_;
+  bool owned_;
 };
 
 class WriteFileStream : public WriteStream {
@@ -88,7 +93,11 @@ public:
   // Sets up the necessary functionality with the given conduit to act as a
   // writable stream on the given file descriptor. It is assumed that the file
   // descriptor is non-blocking.
-  WriteFileStream(Conduit* conduit, int fd);
+  //
+  // This constructor may be called by users that want to have their own file
+  // descriptors and use them like streams. `owning` represents if the stream
+  // should take ownership of the file descriptor.
+  WriteFileStream(Conduit* conduit, int fd, bool owning = false);
 
 private:
   // Not default constructible
@@ -100,6 +109,7 @@ private:
   Conduit* conduit_;
   std::shared_ptr<EventListener> listener_;
   int fd_;
+  bool owned_;
 };
 
 }
