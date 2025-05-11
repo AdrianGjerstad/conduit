@@ -43,7 +43,8 @@ public:
   );
 
   // Sets up the necessary functionality with the given conduit to act as a
-  // readable stream on the given file descriptor.
+  // readable stream on the given file descriptor. It is assumed that the file
+  // descriptor is non-blocking.
   ReadFileStream(Conduit* conduit, int fd);
   
 private:
@@ -58,6 +59,44 @@ private:
   // completely filled.
   void DoRead();
   
+  Conduit* conduit_;
+  std::shared_ptr<EventListener> listener_;
+  int fd_;
+};
+
+class WriteFileStream : public WriteStream {
+public:
+  // Opens a file at the given path as an async writable stream.
+  //
+  // - OpenTrunc opens the file for writing, deleting any data previously
+  //   contained.
+  // - OpenAppend opens the file for appending to the end of the file.
+  //
+  // Both functions create previously-non-existent files with the given mode.
+  static absl::StatusOr<std::shared_ptr<WriteFileStream>> OpenTrunc(
+    Conduit* conduit,
+    const std::filesystem::path& path,
+    int mode = 0644
+  );
+
+  static absl::StatusOr<std::shared_ptr<WriteFileStream>> OpenAppend(
+    Conduit* conduit,
+    const std::filesystem::path& path,
+    int mode = 0644
+  );
+
+  // Sets up the necessary functionality with the given conduit to act as a
+  // writable stream on the given file descriptor. It is assumed that the file
+  // descriptor is non-blocking.
+  WriteFileStream(Conduit* conduit, int fd);
+
+private:
+  // Not default constructible
+  WriteFileStream() = delete;
+
+  size_t TryWriteData(absl::string_view data) override;
+  void CloseResource() override;
+
   Conduit* conduit_;
   std::shared_ptr<EventListener> listener_;
   int fd_;

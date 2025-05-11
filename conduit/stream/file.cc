@@ -114,5 +114,85 @@ void ReadFileStream::DoRead() {
   });
 }
 
+absl::StatusOr<std::shared_ptr<WriteFileStream>> WriteFileStream::OpenTrunc(
+  Conduit* conduit, const std::filesystem::path& path, int mode) {
+  // Obtain a file descriptor
+  int fd = open(path.string().c_str(), O_CREAT | O_WRONLY | O_TRUNC |
+                                       O_NONBLOCK, mode);
+
+  if (fd < 0) {
+    return absl::ErrnoToStatus(
+      errno,
+      absl::StrFormat("failed to open file '%s' for writing", path.string())
+    );
+  }
+
+  return std::make_shared<WriteFileStream>(conduit, fd);
+}
+
+absl::StatusOr<std::shared_ptr<WriteFileStream>> WriteFileStream::OpenAppend(
+  Conduit* conduit, const std::filesystem::path& path, int mode) {
+  // Obtain a file descriptor
+  int fd = open(path.string().c_str(), O_CREAT | O_WRONLY | O_APPEND |
+                                       O_NONBLOCK, mode);
+
+  if (fd < 0) {
+    return absl::ErrnoToStatus(
+      errno,
+      absl::StrFormat("failed to open file '%s' for writing", path.string())
+    );
+  }
+
+  return std::make_shared<WriteFileStream>(conduit, fd);
+}
+
+WriteFileStream::WriteFileStream(Conduit* conduit, int fd) : conduit_(conduit),
+  fd_(fd) {
+  listener_ = std::make_shared<::cd::EventListener>(fd);
+
+  listener_->OnHangup([this](int fd) {
+    // Should really only happen if we try writing to a console or something
+    // when it disconnects.
+    HandleHup();
+  });
+
+  conduit_->Add(listener_).IgnoreError();
+}
+
+size_t WriteFileStream::TryWriteData(absl::string_view data) {
+  ssize_t count = write(fd_, data.data(), data.size());
+
+  if (count < 0) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      // We must set an OnWritable listener. The kernel buffer must be full.
+      listener_->OnWritable([this](int fd) {
+        TryFlush();
+      });
+    }
+
+    return 0;
+  }
+
+  if ((size_t)count < data.size()) {
+    // Not everything was written. The kernel buffer must be full.
+    listener_->OnWritable([this](int fd) {
+      TryFlush();
+    });
+    return count;
+  }
+
+  // Everything was written.
+  if (listener_->HasWritable()) {
+    listener_->OffWritable();
+  }
+
+  return count;
+}
+
+void WriteFileStream::CloseResource() {
+  conduit_->Remove(listener_).IgnoreError();
+  close(fd_);
+}
+
 }
 
