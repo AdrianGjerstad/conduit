@@ -38,7 +38,7 @@ cc_library(
     hdrs = ["promise.h"],
     deps = [
         "//conduit",
-        "@abseil-cpp//absl/status/status.h",
+        "@abseil-cpp//absl/status",
     ],
     visibility = ["//visibility:public"],
 )
