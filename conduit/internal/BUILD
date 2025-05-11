@@ -24,6 +24,7 @@ cc_library(
         "//conduit:event",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/time",
     ],
     visibility = ["//conduit:__subpackages__"],
 )

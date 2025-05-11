@@ -29,10 +29,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/epoll.h>
+#include <time.h>
 
 #include <memory>
 
 #include "absl/status/status.h"
+#include "absl/time/time.h"
 
 #include "conduit/event.h"
 
@@ -144,9 +146,10 @@ void ConduitImpl::Refresh(int fd, std::shared_ptr<::cd::EventListener> l) {
   epoll_ctl(linux_.epfd_, EPOLL_CTL_MOD, fd, &ev);
 }
 
-void ConduitImpl::WaitAndProcessEvents() {
+void ConduitImpl::WaitAndProcessEvents(absl::Duration timeout) {
 #define MAX_EVENTS (128)
   struct epoll_event events[MAX_EVENTS];
+  struct timespec ts_timeout = absl::ToTimespec(timeout);
 
   // Refresh any changed listener sets
   for (const auto& it : listeners_) {
@@ -155,7 +158,22 @@ void ConduitImpl::WaitAndProcessEvents() {
     }
   }
 
-  int nfds = epoll_wait(linux_.epfd_, events, MAX_EVENTS, -1);
+  int nfds;
+  if (timeout == absl::InfiniteDuration()) {
+    // We may block as long as we want.
+    nfds = epoll_pwait2(linux_.epfd_,  // EPoll File Descriptor
+                        events,        // Event Buffer
+                        MAX_EVENTS,    // Event Buffer Size
+                        NULL,          // Timeout
+                        NULL);         // Sigset
+  } else {
+    nfds = epoll_pwait2(linux_.epfd_,  // EPoll File Descriptor
+                        events,        // Event Buffer
+                        MAX_EVENTS,    // Event Buffer Size
+                        &ts_timeout,   // Timeout
+                        NULL);         // Sigset
+  }
+
   if (nfds < 0) {
     // Potential errors and why we're ignoring them:
     // - EBADF: We don't allow access to epfd_, so this shouldn't be possible.

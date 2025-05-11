@@ -28,6 +28,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
+#include "absl/time/time.h"
 
 #include "conduit/event.h"
 
@@ -48,7 +49,15 @@ public:
   //
   // NOT SUPPOSED TO LOOP. After processing all events, this function should
   // return.
-  void WaitAndProcessEvents();
+  void WaitAndProcessEvents(absl::Duration timeout = absl::InfiniteDuration());
+
+  // Processes all pending events and returns immediately after completion
+  //
+  // This is equivalent to calling WaitAndProcessEvents with an instantaneous
+  // timeout.
+  void ProcessPendingEvents() {
+    WaitAndProcessEvents(absl::ZeroDuration());
+  }
 
 private:
   // Causes the underlying implementation to refresh this specific listener.
