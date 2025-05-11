@@ -1,0 +1,69 @@
+// Copyright 2025 Adrian Gjerstad
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// -----------------------------------------------------------------------------
+// File: file.h
+// -----------------------------------------------------------------------------
+//
+// This file declares read- and write- file streams for use in disk I/O
+// intensive applications.
+//
+
+#ifndef CONDUIT_STREAM_FILE_H_
+#define CONDUIT_STREAM_FILE_H_
+
+#include <filesystem>
+#include <memory>
+
+#include "absl/status/statusor.h"
+
+#include "conduit/conduit.h"
+#include "conduit/event.h"
+#include "conduit/stream/stream.h"
+
+namespace cd {
+
+class ReadFileStream : public ReadStream {
+public:
+  // Opens a file at the given path as an async readable stream.
+  static absl::StatusOr<std::shared_ptr<ReadFileStream>> Open(
+    Conduit* conduit,
+    const std::filesystem::path& path
+  );
+
+  // Sets up the necessary functionality with the given conduit to act as a
+  // readable stream on the given file descriptor.
+  ReadFileStream(Conduit* conduit, int fd);
+  
+private:
+  // Not default constructible
+  ReadFileStream() = delete;
+
+  void CloseResource() override;
+
+  // Reads up to a certain number of bytes from the file and returns.
+  //
+  // This function should not retry if interrupted by a signal or the buffer is
+  // completely filled.
+  void DoRead();
+  
+  Conduit* conduit_;
+  std::shared_ptr<EventListener> listener_;
+  int fd_;
+};
+
+}
+
+#endif  // CONDUIT_STREAM_FILE_H_
+
