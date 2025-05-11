@@ -64,8 +64,14 @@ bool Conduit::IsAlive() {
     }
   }
 
-  if (impl_.Listeners().size()) {
-    return true;
+  // Hangup handlers, while important, must not prevent the application from
+  // stopping.
+  for (const auto& it : impl_.Listeners()) {
+    if (it.second->HasReadable() ||
+        it.second->HasWritable() ||
+        it.second->HasAcceptable()) {
+      return true;
+    }
   }
 
   return false;
