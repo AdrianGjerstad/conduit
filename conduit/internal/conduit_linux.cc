@@ -134,9 +134,26 @@ absl::Status ConduitImpl::Unregister(int fd,
   return absl::OkStatus();
 }
 
+void ConduitImpl::Refresh(int fd, std::shared_ptr<::cd::EventListener> l) {
+  struct epoll_event ev;
+
+  ev.events = GenerateEPollFlags(l);
+  ev.data.fd = fd;
+  
+  // We don't care about errors here.
+  epoll_ctl(linux_.epfd_, EPOLL_CTL_MOD, fd, &ev);
+}
+
 void ConduitImpl::WaitAndProcessEvents() {
 #define MAX_EVENTS (128)
   struct epoll_event events[MAX_EVENTS];
+
+  // Refresh any changed listener sets
+  for (const auto& it : listeners_) {
+    if (it.second->HasListenerSetChanged()) {
+      Refresh(it.first, it.second);
+    }
+  }
 
   int nfds = epoll_wait(linux_.epfd_, events, MAX_EVENTS, -1);
   if (nfds < 0) {

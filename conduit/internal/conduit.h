@@ -51,6 +51,9 @@ public:
   void WaitAndProcessEvents();
 
 private:
+  // Causes the underlying implementation to refresh this specific listener.
+  void Refresh(int fd, std::shared_ptr<::cd::EventListener> l);
+
   // A set of listeners that can be indexed by their file descriptors
   absl::flat_hash_map<int, std::shared_ptr<::cd::EventListener>> listeners_;
   

@@ -29,6 +29,9 @@
 namespace cd {
 
 absl::Status Conduit::Add(std::shared_ptr<EventListener> listener) {
+  // Reset internal flag to avoid unnecessary refreshing immediately after
+  // registering this listener.
+  listener->HasListenerSetChanged();
   return impl_.Register(listener->Get(), listener);
 }
 

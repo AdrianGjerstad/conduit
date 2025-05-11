@@ -59,6 +59,9 @@ public:
   // Note, on some implementations, for example, Linux, Readable and Acceptable
   // are the same thing for server sockets. It is implementation-defined which
   // one is invoked first.
+  //
+  // Calls to these functions after being added to a Conduit are registered with
+  // the underlying implementation before waiting for events.
   void OnReadable(ListenerFn listener);
   void OffReadable();
   void OnWritable(ListenerFn listener);
@@ -83,12 +86,17 @@ public:
   // Gets the underlying file descriptor
   int Get() const;
 
+  // Get whether or not a listener callback was added or removed since the last
+  // call to this function.
+  bool HasListenerSetChanged();
+
 private:
   ListenerFn readable_;
   ListenerFn writable_;
   ListenerFn acceptable_;
   ListenerFn hangup_;
   int fd_;
+  bool has_listener_set_changed_;
 };
 
 }
