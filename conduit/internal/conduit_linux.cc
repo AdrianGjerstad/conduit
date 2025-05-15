@@ -146,6 +146,16 @@ void ConduitImpl::Refresh(int fd, std::shared_ptr<::cd::EventListener> l) {
   epoll_ctl(linux_.epfd_, EPOLL_CTL_MOD, fd, &ev);
 }
 
+bool ConduitImpl::HasRegardedListeners() {
+  for (const auto& it : listeners_) {
+    if (it.second->ShouldRegard()) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 void ConduitImpl::WaitAndProcessEvents(absl::Duration timeout) {
 #define MAX_EVENTS (128)
   struct epoll_event events[MAX_EVENTS];

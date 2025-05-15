@@ -90,6 +90,21 @@ public:
   // call to this function.
   bool HasListenerSetChanged();
 
+  // Tells Conduit to disregard this listener in determining whether or not to
+  // end the program.
+  void Disregard();
+
+  // Opposes Disregard(). This is the default.
+  void Regard();
+
+  // Calculates whether or not this listener should prevent the application from
+  // ending.
+  //
+  // Currently, as long as the listener is not disregarded and has an
+  // OnReadable, OnWritable, or OnAcceptable event listener, the listener will
+  // be regarded.
+  bool ShouldRegard();
+
 private:
   ListenerFn readable_;
   ListenerFn writable_;
@@ -97,6 +112,7 @@ private:
   ListenerFn hangup_;
   int fd_;
   bool has_listener_set_changed_;
+  bool regarded_;
 };
 
 }

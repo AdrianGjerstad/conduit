@@ -63,8 +63,8 @@ public:
   // a *writing* lock to do so.
   void OnNext(std::function<void()> cb);
 
-  // Begins listening for events on this Conduit
-  void RunForever();
+  // Begins listening for events and running callbacks on this Conduit
+  void Run();
 
 private:
   // Checks if the loop should start its next iteration or if the program should

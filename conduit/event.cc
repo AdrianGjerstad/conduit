@@ -27,7 +27,7 @@
 namespace cd {
 
 EventListener::EventListener(int fd) : fd_(fd),
-  has_listener_set_changed_(false) {
+  has_listener_set_changed_(false), regarded_(true) {
   // Nothing to do.
 }
 
@@ -122,6 +122,26 @@ bool EventListener::HasListenerSetChanged() {
   // the last refresh.
   has_listener_set_changed_ = false;
   return result;
+}
+
+void EventListener::Disregard() {
+  regarded_ = false;
+}
+
+void EventListener::Regard() {
+  regarded_ = true;
+}
+
+bool EventListener::ShouldRegard() {
+  if (!regarded_) {
+    return false;
+  }
+
+  if (readable_ || writable_ || acceptable_) {
+    return true;
+  }
+
+  return false;
 }
 
 }

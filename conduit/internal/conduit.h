@@ -44,6 +44,10 @@ public:
   absl::Status Register(int fd, std::shared_ptr<::cd::EventListener> l);
   absl::Status Unregister(int fd, std::shared_ptr<::cd::EventListener> l);
 
+  // Tells if this implementation has listeners that would prevent the
+  // application from ending.
+  bool HasRegardedListeners();
+
   // Waits for events to occur and then processes them according to the
   // callbacks provided when the user decided to start listening with an fd.
   //

@@ -40,13 +40,19 @@ namespace cd {
 // reported using absl::Status.
 template <typename T>
 class Promise {
+private:
+  bool completed_;
+
+  std::function<void(const T&)> resolve_cb_;
+  std::function<void(absl::Status)> reject_cb_;
+
 public:
-  Promise(Conduit* conduit) : conduit_(conduit), completed_(false) {
+  Promise() : completed_(false) {
     // Nothing to do.
   }
 
   // Specify a callback for when this promise succeeds.
-  Promise* Then(std::function<void(std::shared_ptr<T>)> cb) {
+  Promise* Then(std::function<void(const T&)> cb) {
     resolve_cb_ = cb;
     return this;
   }
@@ -56,11 +62,9 @@ public:
     return this;
   }
 
-  void Resolve(std::shared_ptr<T> t) {
+  void Resolve(const T& t) {
     if (!completed_ && resolve_cb_) {
-      conduit_->OnNext([resolve_cb_, t]() {
-        resolve_cb_(t);
-      });
+      resolve_cb_(t);
     }
 
     completed_ = true;
@@ -68,20 +72,11 @@ public:
 
   void Reject(absl::Status e) {
     if (!completed_ && reject_cb_) {
-      conduit_->OnNext([reject_cb_, e]() {
-        reject_cb_(e);
-      });
+      reject_cb_(e);
     }
 
     completed_ = true;
   }
-
-private:
-  Conduit* conduit;
-  bool completed_;
-
-  std::function<void(T)> resolve_cb_;
-  std::function<void(absl::Status)> reject_cb_;
 };
 
 }

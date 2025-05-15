@@ -48,10 +48,12 @@ void Conduit::OnNext(std::function<void()> cb) {
   cb_queue_.push(cb);
 }
 
-void Conduit::RunForever() {
+void Conduit::Run() {
   while (IsAlive()) {
     RunCallbackQueue();
-    impl_.WaitAndProcessEvents(CalculateTimeout());
+    if (impl_.HasRegardedListeners()) {
+      impl_.WaitAndProcessEvents(CalculateTimeout());
+    }
   }
 }
 
@@ -64,17 +66,7 @@ bool Conduit::IsAlive() {
     }
   }
 
-  // Hangup handlers, while important, must not prevent the application from
-  // stopping.
-  for (const auto& it : impl_.Listeners()) {
-    if (it.second->HasReadable() ||
-        it.second->HasWritable() ||
-        it.second->HasAcceptable()) {
-      return true;
-    }
-  }
-
-  return false;
+  return impl_.HasRegardedListeners();
 }
 
 absl::Duration Conduit::CalculateTimeout() {
