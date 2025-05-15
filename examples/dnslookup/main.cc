@@ -19,7 +19,7 @@
 // This file demonstrates how to perform an asynchronous DNS lookup.
 //
 
-#include <memory>
+#include <iostream>
 #include <string>
 #include <vector>
 
