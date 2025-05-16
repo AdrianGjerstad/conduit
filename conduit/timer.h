@@ -55,6 +55,7 @@
 #define CONDUIT_TIMER_H_
 
 #include <functional>
+#include <memory>
 
 #include "absl/time/time.h"
 
@@ -76,7 +77,8 @@ public:
   Timer() = delete;
 
   // Creates a timer with a callback to execute after a delta has passed.
-  Timer(TimerMode mode, absl::Duration delta, std::function<void()> callback);
+  Timer(TimerMode mode, absl::Duration delta,
+    std::function<void(std::shared_ptr<Timer>)> callback);
 
   // These attributes of a timer are designed to be immutable (externally).
   TimerMode Mode() const;
@@ -92,12 +94,12 @@ public:
   //
   // Also handles resetting internal state for the next invocation on repeated
   // timers.
-  void RunIfExpired();
+  void RunIfExpired(std::shared_ptr<Timer> self);
 
 private:
   TimerMode mode_;
   absl::Duration delta_;
-  std::function<void()> callback_;
+  std::function<void(std::shared_ptr<Timer>)> callback_;
   // Represents the next time that the callback should be called.
   absl::Time next_time_;
 };

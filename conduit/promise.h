@@ -49,6 +49,10 @@ private:
 
   std::function<void(const T&)> resolve_cb_;
   std::function<void(absl::Status)> reject_cb_;
+  std::function<void()> timeout_cb_;
+
+  // Never actually called.
+  std::function<void()> depending_closure_;
 
 public:
   // Creates a promise with unbounded time to complete.
@@ -60,7 +64,11 @@ public:
   Promise(Conduit* conduit, absl::Duration timeout) : conduit_(conduit),
     completed_(false) {
     // Start a timer
-    timer_ = conduit_->OnTimeout(timeout, [this]() {
+    timer_ = conduit_->OnTimeout(timeout, [this](std::shared_ptr<Timer> t) {
+      if (timeout_cb_) {
+        timeout_cb_();
+      }
+
       Reject(absl::DeadlineExceededError("operation timed out"));
     });
   }
@@ -75,6 +83,23 @@ public:
   Promise* Catch(std::function<void(absl::Status)> cb) {
     reject_cb_ = cb;
     return this;
+  }
+
+  // Specify a callback for if this promise times out.
+  //
+  // For use by the promise creator only.
+  void OnTimeout(std::function<void()> cb) {
+    timeout_cb_ = cb;
+  }
+
+  // Specify an underlying promise that this promise relies on.
+  //
+  // For use by the promise creator only. Provided to correct lifetimes.
+  template <typename U>
+  void DependsOnOther(std::shared_ptr<Promise<U>> other) {
+    depending_closure_ = [other]() {
+      // Does nothing.
+    };
   }
 
   void Resolve(const T& t) {

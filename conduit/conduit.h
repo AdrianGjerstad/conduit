@@ -71,14 +71,14 @@ public:
   // THREAD SAFETY: This function mutates internal Conduit state, and obtains a
   // *writing* lock to do so.
   std::shared_ptr<Timer> OnTimeout(absl::Duration delta,
-    std::function<void()> cb);
+    std::function<void(std::shared_ptr<Timer>)> cb);
 
   // Creates and schedules a repeated timer.
   //
   // THREAD SAFETY: This function mutates internal Conduit state, and obtains a
   // *writing* lock to do so.
   std::shared_ptr<Timer> OnInterval(absl::Duration delta,
-    std::function<void()> cb);
+    std::function<void(std::shared_ptr<Timer>)> cb);
 
   // Unschedules a timer.
   //

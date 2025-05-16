@@ -41,6 +41,7 @@
 #include "conduit/net/net.h"
 #include "conduit/net/socket.h"
 #include "conduit/promise.h"
+#include "conduit/timer.h"
 
 namespace cd {
 
@@ -918,7 +919,8 @@ std::vector<DNSRecord>* DNSMessage::MutableAdditionalRecords() {
 }
 
 NameResolver::NameResolver(Conduit* conduit) : conduit_(conduit),
-  next_id_(0x241a) {
+  next_id_(0x241a), query_timeout_(absl::Seconds(10)),
+  query_retransmit_interval_(absl::Milliseconds(500)) {
   // For now we just use Google's public DNS service.
   absl::StatusOr<IPAddress> resolver_s = IPAddress::From("8.8.8.8");
   if (!resolver_s.ok()) {
@@ -942,8 +944,25 @@ NameResolver::NameResolver(Conduit* conduit) : conduit_(conduit),
   socket_->MarkIdle();
 }
 
+absl::Duration NameResolver::QueryTimeout() const {
+  return query_timeout_;
+}
+
+void NameResolver::QueryTimeout(absl::Duration qto) {
+  query_timeout_ = qto;
+}
+
+absl::Duration NameResolver::QueryRetransmitInterval() const {
+  return query_retransmit_interval_;
+}
+
+void NameResolver::QueryRetransmitInterval(absl::Duration qrti) {
+  query_retransmit_interval_ = qrti;
+}
+
 std::shared_ptr<Promise<DNSMessage>> NameResolver::Query(DNSMessage* msg) {
-  auto promise = std::make_shared<Promise<DNSMessage>>();
+  auto promise = std::make_shared<Promise<DNSMessage>>(conduit_,
+    query_timeout_);
 
   msg->ID(next_id_);
   ++next_id_;
@@ -962,10 +981,28 @@ std::shared_ptr<Promise<DNSMessage>> NameResolver::Query(DNSMessage* msg) {
     return promise;
   }
 
+  auto pkt = pkt_s.value();
   socket_->Write(pkt_s.value());
+  auto retransmit_interval = conduit_->OnInterval(query_retransmit_interval_,
+    [this, pkt](std::shared_ptr<Timer> self) {
+    socket_->Write(pkt);
+  });
 
   pending_queries_[msg->ID()] = promise;
+  pending_retransmits_[msg->ID()] = retransmit_interval;
   socket_->MarkPending();
+
+  auto id = msg->ID();
+  promise->OnTimeout([this, id, retransmit_interval]() {
+    // Operation Timeout
+    conduit_->CancelTimer(retransmit_interval);
+    pending_queries_.erase(id);
+    pending_retransmits_.erase(id);
+    if (pending_queries_.empty()) {
+      socket_->MarkIdle();
+    }
+  });
+
   return promise;
 }
 
@@ -1020,6 +1057,7 @@ std::shared_ptr<Promise<std::vector<DNSRecord>>> NameResolver::Lookup(
   query_promise->Catch([promise](absl::Status err) {
     promise->Reject(err);
   });
+  promise->DependsOnOther(query_promise);
 
   return promise;
 }
@@ -1087,6 +1125,7 @@ std::shared_ptr<Promise<std::vector<IPAddress>>> NameResolver::Resolve(
   lookup_promise->Catch([promise](absl::Status err) {
     promise->Reject(err);
   });
+  promise->DependsOnOther(lookup_promise);
 
   return promise;
 }
@@ -1123,6 +1162,10 @@ void NameResolver::HandleIncomingMessage(absl::string_view data) {
   absl::StatusOr<DNSMessage> msg_s = DNSMessage::Deserialize(data);
   
   pending_queries_.erase(id);
+  if (pending_retransmits_.contains(id)) {
+    conduit_->CancelTimer(pending_retransmits_.at(id));
+    pending_retransmits_.erase(id);
+  }
 
   if (pending_queries_.empty()) {
     socket_->MarkIdle();

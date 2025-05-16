@@ -53,7 +53,7 @@ void Conduit::OnNext(std::function<void()> cb) {
 }
 
 std::shared_ptr<Timer> Conduit::OnTimeout(absl::Duration delta,
-  std::function<void()> cb) {
+  std::function<void(std::shared_ptr<Timer>)> cb) {
   auto timer = std::make_shared<Timer>(TimerMode::kSingleShot, delta, cb);
 
   {
@@ -66,7 +66,7 @@ std::shared_ptr<Timer> Conduit::OnTimeout(absl::Duration delta,
 }
 
 std::shared_ptr<Timer> Conduit::OnInterval(absl::Duration delta,
-  std::function<void()> cb) {
+  std::function<void(std::shared_ptr<Timer>)> cb) {
   auto timer = std::make_shared<Timer>(TimerMode::kRepeated, delta, cb);
 
   {
@@ -181,7 +181,7 @@ void Conduit::RunExpiredTimers() {
   }
 
   for (auto& timer : expired_timers) {
-    timer->RunIfExpired();
+    timer->RunIfExpired(timer);
 
     if (timer->Mode() == TimerMode::kDeactivated) {
       // RunIfExpired would no longer do anything.

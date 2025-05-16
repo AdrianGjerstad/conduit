@@ -398,6 +398,27 @@ private:
   std::vector<DNSRecord> additional_records_;
 };
 
+// Represents a generalized, caching DNS query agent.
+//
+// The recommended use of this class is to create exactly one instance of it for
+// the entire process, and using one of Query(), Lookup(), or Resolve() to
+// retrieve data. The differences are described below.
+//
+// Query(): allows you to choose the exact query contents as they appear on the
+// wire.
+//
+// Lookup(): a wrapper around Query() that allows for caching.
+//
+// Resolve(): a wrapper around Lookup() that handles CNAME records and just
+// completely hides all complexities of DNS from the user, only returning a list
+// of IP addresses to attempt connections to.
+//
+// Options:
+// - QueryTimeout: the amount of time the agent should wait for a response
+//   before timing out. (default: 10s)
+// - QueryRetransmitInterval: The amount of time the agent should wait for a
+//   response before attempting to retransmit the query, presuming packet loss.
+//   (default: 500ms)
 class NameResolver {
 public:
   // Not default-constructible
@@ -405,6 +426,13 @@ public:
   
   // Creates a new NameResolver with network capabilities.
   NameResolver(Conduit* conduit);
+
+  // Option getters and setters
+  absl::Duration QueryTimeout() const;
+  void QueryTimeout(absl::Duration qto);
+
+  absl::Duration QueryRetransmitInterval() const;
+  void QueryRetransmitInterval(absl::Duration qrti);
 
   // Initiates a DNS query.
   //
@@ -459,10 +487,12 @@ private:
   std::shared_ptr<UDPSocket> socket_;
   uint16_t next_id_;
 
-  // A map of query IDs to promises
+  // A map of query IDs to promises/retransmission intervals
   absl::flat_hash_map<uint16_t,
                       std::shared_ptr<Promise<DNSMessage>>>
     pending_queries_;
+  absl::flat_hash_map<uint16_t,
+                      std::shared_ptr<Timer>> pending_retransmits_;
 
   // DNS cache for this resolver
   //
@@ -477,6 +507,10 @@ private:
   absl::flat_hash_map<std::tuple<std::string, DNSRecordClass>,
                       absl::flat_hash_map<DNSRecordType,
                                           std::vector<DNSRecord>>> cache_;
+
+  // Options
+  absl::Duration query_timeout_;
+  absl::Duration query_retransmit_interval_;
 };
 
 }

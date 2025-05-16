@@ -24,6 +24,7 @@
 #include "conduit/timer.h"
 
 #include <functional>
+#include <memory>
 
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
@@ -31,8 +32,8 @@
 namespace cd {
 
 Timer::Timer(TimerMode mode, absl::Duration delta,
-  std::function<void()> callback) : mode_(mode), delta_(delta),
-  callback_(callback), next_time_(absl::Now() + delta) {
+  std::function<void(std::shared_ptr<Timer>)> callback) : mode_(mode),
+  delta_(delta), callback_(callback), next_time_(absl::Now() + delta) {
   // Nothing to do.
 }
 
@@ -48,7 +49,7 @@ absl::Duration Timer::TimeUntilExpiry() const {
   return next_time_ - absl::Now();
 }
 
-void Timer::RunIfExpired() {
+void Timer::RunIfExpired(std::shared_ptr<Timer> self) {
   if (TimeUntilExpiry() > absl::ZeroDuration()) {
     // This timer hasn't expired!
     return;
@@ -72,7 +73,7 @@ void Timer::RunIfExpired() {
   }
 
   // Run the callback
-  callback_();
+  callback_(self);
 }
 
 }
