@@ -27,11 +27,14 @@
 #include <memory>
 #include <queue>
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/time/time.h"
 
 #include "conduit/event.h"
 #include "conduit/internal/conduit.h"
+#include "conduit/timer.h"
 
 namespace cd {
 
@@ -63,6 +66,26 @@ public:
   // a *writing* lock to do so.
   void OnNext(std::function<void()> cb);
 
+  // Creates and schedules a single-shot timer.
+  //
+  // THREAD SAFETY: This function mutates internal Conduit state, and obtains a
+  // *writing* lock to do so.
+  std::shared_ptr<Timer> OnTimeout(absl::Duration delta,
+    std::function<void()> cb);
+
+  // Creates and schedules a repeated timer.
+  //
+  // THREAD SAFETY: This function mutates internal Conduit state, and obtains a
+  // *writing* lock to do so.
+  std::shared_ptr<Timer> OnInterval(absl::Duration delta,
+    std::function<void()> cb);
+
+  // Unschedules a timer.
+  //
+  // THREAD SAFETY: This function mutates internal Conduit state, and obtains a
+  // *writing* lock to do so.
+  void CancelTimer(std::shared_ptr<Timer> timer);
+
   // Begins listening for events and running callbacks on this Conduit
   void Run();
 
@@ -86,6 +109,15 @@ private:
   // calling user-specified code.
   void RunCallbackQueue();
 
+  // Executes timers that were scheduled and are due for execution.
+  //
+  // Expired single-shot timers are removed from the internal scheduling
+  // mechanism after execution.
+  //
+  // THREAD SAFETY: This function provides the same thread safety guarantee as
+  // RunCallbackQueue.
+  void RunExpiredTimers();
+
   // To allow for non-Linux implementations, implementation details are
   // abstracted away.
   internal::ConduitImpl impl_;
@@ -93,6 +125,10 @@ private:
   // Queue of callbacks to be executed at the start of the next loop.
   std::queue<std::function<void()>> cb_queue_;
   absl::Mutex cb_queue_mutex_;
+
+  // Set of outstanding timers.
+  absl::flat_hash_set<std::shared_ptr<Timer>> timers_;
+  absl::Mutex timer_set_mutex_;
 };
 
 }

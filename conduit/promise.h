@@ -29,8 +29,10 @@
 #include <memory>
 
 #include "absl/status/status.h"
+#include "absl/time/time.h"
 
 #include "conduit/conduit.h"
+#include "conduit/timer.h"
 
 namespace cd {
 
@@ -41,14 +43,26 @@ namespace cd {
 template <typename T>
 class Promise {
 private:
+  Conduit* conduit_;
+  std::shared_ptr<Timer> timer_;
   bool completed_;
 
   std::function<void(const T&)> resolve_cb_;
   std::function<void(absl::Status)> reject_cb_;
 
 public:
-  Promise() : completed_(false) {
+  // Creates a promise with unbounded time to complete.
+  Promise() : conduit_(nullptr), completed_(false) {
     // Nothing to do.
+  }
+
+  // Creates a promise with a timeout for resolution or rejection.
+  Promise(Conduit* conduit, absl::Duration timeout) : conduit_(conduit),
+    completed_(false) {
+    // Start a timer
+    timer_ = conduit_->OnTimeout(timeout, [this]() {
+      Reject(absl::DeadlineExceededError("operation timed out"));
+    });
   }
 
   // Specify a callback for when this promise succeeds.
@@ -57,6 +71,7 @@ public:
     return this;
   }
 
+  // Specify a callback for if this promise fails.
   Promise* Catch(std::function<void(absl::Status)> cb) {
     reject_cb_ = cb;
     return this;
@@ -64,6 +79,11 @@ public:
 
   void Resolve(const T& t) {
     if (!completed_ && resolve_cb_) {
+      if (conduit_ && timer_) {
+        conduit_->CancelTimer(timer_);
+        timer_ = nullptr;
+      }
+
       resolve_cb_(t);
     }
 
@@ -72,6 +92,11 @@ public:
 
   void Reject(absl::Status e) {
     if (!completed_ && reject_cb_) {
+      if (conduit_ && timer_) {
+        conduit_->CancelTimer(timer_);
+        timer_ = nullptr;
+      }
+
       reject_cb_(e);
     }
 

@@ -24,9 +24,9 @@
 #include <vector>
 
 #include "conduit/conduit.h"
-#include "conduit/event.h"
 #include "conduit/net/dns.h"
 #include "conduit/net/net.h"
+#include "conduit/promise.h"
 
 int main(int argc, char** argv) {
   cd::Conduit conduit;

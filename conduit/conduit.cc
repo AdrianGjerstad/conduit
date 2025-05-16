@@ -23,11 +23,15 @@
 #include "conduit/conduit.h"
 
 #include <functional>
+#include <memory>
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/time/time.h"
 
 #include "conduit/event.h"
+#include "conduit/timer.h"
 
 namespace cd {
 
@@ -48,12 +52,45 @@ void Conduit::OnNext(std::function<void()> cb) {
   cb_queue_.push(cb);
 }
 
+std::shared_ptr<Timer> Conduit::OnTimeout(absl::Duration delta,
+  std::function<void()> cb) {
+  auto timer = std::make_shared<Timer>(TimerMode::kSingleShot, delta, cb);
+
+  {
+    absl::WriterMutexLock lock(&timer_set_mutex_);
+
+    timers_.insert(timer);
+  }
+
+  return timer;
+}
+
+std::shared_ptr<Timer> Conduit::OnInterval(absl::Duration delta,
+  std::function<void()> cb) {
+  auto timer = std::make_shared<Timer>(TimerMode::kRepeated, delta, cb);
+
+  {
+    absl::WriterMutexLock lock(&timer_set_mutex_);
+
+    timers_.insert(timer);
+  }
+
+  return timer;
+}
+
+void Conduit::CancelTimer(std::shared_ptr<Timer> timer) {
+  absl::WriterMutexLock lock(&timer_set_mutex_);
+
+  timers_.erase(timer);
+}
+
 void Conduit::Run() {
   while (IsAlive()) {
     RunCallbackQueue();
     if (impl_.HasRegardedListeners()) {
       impl_.WaitAndProcessEvents(CalculateTimeout());
     }
+    RunExpiredTimers();
   }
 }
 
@@ -62,6 +99,14 @@ bool Conduit::IsAlive() {
     absl::ReaderMutexLock lock(&cb_queue_mutex_);
     
     if (cb_queue_.size()) {
+      return true;
+    }
+  }
+
+  {
+    absl::ReaderMutexLock lock(&timer_set_mutex_);
+
+    if (!timers_.empty()) {
       return true;
     }
   }
@@ -80,8 +125,23 @@ absl::Duration Conduit::CalculateTimeout() {
     }
   }
 
-  // Clearly nothing else needs to be done, so we can just wait indefinitely.
-  return absl::InfiniteDuration();
+  {
+    absl::ReaderMutexLock lock(&timer_set_mutex_);
+
+    absl::Duration min_remaining = absl::InfiniteDuration();
+    for (const auto& timer : timers_) {
+      absl::Duration remaining = timer->TimeUntilExpiry();
+      if (remaining < absl::ZeroDuration()) {
+        return absl::ZeroDuration();
+      }
+
+      if (min_remaining > remaining) {
+        min_remaining = remaining;
+      }
+    }
+
+    return min_remaining;
+  }
 }
 
 void Conduit::RunCallbackQueue() {
@@ -105,6 +165,28 @@ void Conduit::RunCallbackQueue() {
     // when this function is called.
     if (fn) {
       fn();
+    }
+  }
+}
+
+void Conduit::RunExpiredTimers() {
+  absl::flat_hash_set<std::shared_ptr<Timer>> expired_timers;
+  {
+    absl::ReaderMutexLock read_lock(&timer_set_mutex_);
+    for (auto& timer : timers_) {
+      if (timer->TimeUntilExpiry() <= absl::ZeroDuration()) {
+        expired_timers.insert(timer);
+      }
+    }
+  }
+
+  for (auto& timer : expired_timers) {
+    timer->RunIfExpired();
+
+    if (timer->Mode() == TimerMode::kDeactivated) {
+      // RunIfExpired would no longer do anything.
+      absl::WriterMutexLock write_lock(&timer_set_mutex_);
+      timers_.erase(timer);
     }
   }
 }

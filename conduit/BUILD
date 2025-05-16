@@ -19,9 +19,12 @@ cc_library(
     hdrs = ["conduit.h"],
     deps = [
         ":event",
+        ":timer",
         "//conduit/internal:conduit",
+        "@abseil-cpp//absl/container:flat_hash_set",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/synchronization",
+        "@abseil-cpp//absl/time",
     ],
     visibility = ["//visibility:public"],
 )
@@ -37,8 +40,20 @@ cc_library(
     name = "promise",
     hdrs = ["promise.h"],
     deps = [
+        ":timer",
         "//conduit",
         "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/time",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "timer",
+    srcs = ["timer.cc"],
+    hdrs = ["timer.h"],
+    deps = [
+        "@abseil-cpp//absl/time",
     ],
     visibility = ["//visibility:public"],
 )
