@@ -1108,9 +1108,8 @@ std::vector<DNSRecord>* DNSMessage::MutableAdditionalRecords() {
 }
 
 NameResolver::NameResolver(Conduit* conduit) : conduit_(conduit),
-  next_id_(0x241a), query_timeout_(absl::Seconds(10)),
-  query_retransmit_interval_(absl::Milliseconds(500)), round_robin_(false),
-  rr_index_(0) {
+  next_id_(0x241a) {
+  DefaultConfig();
   absl::StatusOr<std::shared_ptr<UDPSocket>> socket_s = UDPSocket::Create(conduit);
   if (!socket_s.ok()) {
     // We failed to create the socket for some bizarre reason.
@@ -1153,6 +1152,33 @@ bool NameResolver::RoundRobin() const {
 
 void NameResolver::RoundRobin(bool rr) {
   round_robin_ = rr;
+  rr_index_ = 0;
+}
+
+void NameResolver::ClearConfig() {
+  nameservers_.clear();
+  rr_index_ = 0;
+}
+
+void NameResolver::DefaultConfig() {
+  ClearConfig();
+  query_timeout_ = absl::Seconds(2);
+  query_retransmit_interval_ = absl::Milliseconds(250);
+  nameservers_.push_back(IPAddress::From("8.8.8.8").value());
+  nameservers_.push_back(IPAddress::From("8.8.4.4").value());
+  round_robin_ = true;
+  rr_index_ = 0;
+}
+
+void NameResolver::DefaultClientConfig() {
+  ClearConfig();
+  query_timeout_ = absl::Seconds(10);
+  query_retransmit_interval_ = absl::Milliseconds(500);
+  absl::StatusOr<IPAddress> gw_s = GetGatewayAddressSync();
+  if (gw_s.ok()) {
+    nameservers_.push_back(gw_s.value());
+  }
+  round_robin_ = false;
   rr_index_ = 0;
 }
 

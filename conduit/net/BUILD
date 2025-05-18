@@ -33,7 +33,13 @@ cc_library(
 
 cc_library(
     name = "net",
-    srcs = ["net.cc"],
+    srcs = select({
+        "@platforms//os:linux": [
+            "net.cc",
+            "net_linux.cc",
+        ],
+        "//conditions:default": ["net.cc"],
+    }),
     hdrs = ["net.h"],
     deps = [
         "@abseil-cpp//absl/status",

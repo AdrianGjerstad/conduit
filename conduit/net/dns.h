@@ -485,10 +485,9 @@ private:
 //
 // Options:
 // - QueryTimeout: the amount of time the agent should wait for a response
-//   before timing out. (default: 10s)
+//   before timing out.
 // - QueryRetransmitInterval: The amount of time the agent should wait for a
 //   response before attempting to retransmit the query, presuming packet loss.
-//   (default: 500ms)
 // - UseNameServer: adds the IP address of a DNS server to the list of name
 //   servers that this NameResolver queries. By default, the first name server
 //   is queried, and subsequent ones only if the first one does not respond
@@ -504,6 +503,8 @@ public:
   NameResolver() = delete;
   
   // Creates a new NameResolver with network capabilities.
+  //
+  // Uses DefaultConfig()
   NameResolver(Conduit* conduit);
 
   // Options
@@ -518,6 +519,38 @@ public:
 
   bool RoundRobin() const;
   void RoundRobin(bool rr);
+
+  // Clears all configuration values to a reset point.
+  //
+  // The main thing this method does is clear the list of nameservers. All
+  // scalar values should be assumed to have an undefined value after this.
+  void ClearConfig();
+
+  // Loads the default config into this name resolver (probably server-side):
+  // - QueryTimeout(absl::Seconds(2))
+  // - QueryRetransmit(absl::Milliseconds(250))
+  // - UseNameServer("8.8.8.8")
+  // - UseNameServer("8.8.4.4")
+  // - RoundRobin(true)
+  //
+  // Designed with high-speed server performance in mind, and keeping the
+  // environment secure by using publicly available DNS servers only.
+  void DefaultConfig();
+
+  // Loads the default config for a typical client into this name resolver:
+  // - QueryTimeout(absl::Seconds(10))
+  // - QueryRetransmitInterval(absl::Milliseconds(500))
+  // - UseNameServer(<your default interface's gateway IP>)
+  // - RoundRobin(false)
+  //
+  // Please do not use this method in server-side code. Improper use and
+  // user-input sanitization could lead to exposure of system-internal domain
+  // names and IP addresses.
+  //
+  // NOTE: This method is synchronous, and, depending on the implementation,
+  // requires reading pseudo files (such as /proc/net/route) in order to
+  // determine the gateway, and likely local DNS server IP address.
+  void DefaultClientConfig();
 
   // Initiates a DNS query.
   //

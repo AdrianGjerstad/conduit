@@ -88,6 +88,10 @@ private:
   std::string addr_;  // Represented in binary, network-order form.
 };
 
+// Obtains the IP address of the gateway for the default network interface on
+// this device (synchronously or asynchronously).
+absl::StatusOr<IPAddress> GetGatewayAddressSync();
+
 }
 
 #endif  // CONDUIT_NET_NET_H_

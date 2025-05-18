@@ -32,8 +32,6 @@ int main(int argc, char** argv) {
   cd::Conduit conduit;
   cd::NameResolver resolver(&conduit);
 
-  resolver.UseNameServer(cd::IPAddress::From("192.168.1.1").value());
-
   if (argc < 2) {
     std::cerr << "usage: " << argv[0] << " <domain-name>" << std::endl;
     return 1;
