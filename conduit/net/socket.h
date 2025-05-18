@@ -74,6 +74,14 @@ public:
   // use UDPSocket::Bind.
   static absl::StatusOr<std::shared_ptr<UDPSocket>> Create(Conduit* conduit);
 
+  // Creates a new UDP socket, pre-bound so that it may immediately begin
+  // listening for packets on the network. (server-mode socket)
+  static absl::StatusOr<std::shared_ptr<UDPSocket>> Bind(
+    Conduit* conduit,
+    IPAddress host,
+    uint16_t port
+  );
+
   // Constructs a UDP socket that owns the given file descriptor.
   UDPSocket(Conduit* conduit, int fd);
 

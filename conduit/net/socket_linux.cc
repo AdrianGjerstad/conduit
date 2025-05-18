@@ -159,6 +159,47 @@ absl::StatusOr<std::shared_ptr<UDPSocket>> UDPSocket::Create(Conduit* conduit) {
   return std::make_shared<UDPSocket>(conduit, fd);
 }
 
+absl::StatusOr<std::shared_ptr<UDPSocket>> UDPSocket::Bind(Conduit* conduit,
+  IPAddress host, uint16_t port) {
+  // Create socket
+  int fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+  if (fd < 0) {
+    // All potential errors are either irrecoverable or user error.
+    return absl::ErrnoToStatus(errno, "failed to create UDP socket");
+  }
+
+  // Bind socket
+  if (host.Version() == IPAddress::IPVersion::k4){
+    struct sockaddr_in sa;
+    sa.sin_family = AF_INET;
+    memcpy(&sa.sin_addr.s_addr, host.AddressAsBytes().data(),
+           host.AddressAsBytes().size());
+    sa.sin_port = htons(port);
+
+    if (bind(fd, (struct sockaddr*)&sa, sizeof(sa))) {
+      // Any errors hapenning here are irrecoverable for this socket.
+      close(fd);
+      return absl::ErrnoToStatus(errno, "failed to bind UDP socket");
+    }
+  } else if (host.Version() == IPAddress::IPVersion::k6) {
+    struct sockaddr_in6 sa;
+    sa.sin6_family = AF_INET6;
+    memcpy(sa.sin6_addr.s6_addr, host.AddressAsBytes().data(),
+           host.AddressAsBytes().size());
+    sa.sin6_port = htons(port);
+
+    if (bind(fd, (struct sockaddr*)&sa, sizeof(sa))) {
+      // Any errors hapenning here are irrecoverable for this socket.
+      close(fd);
+      return absl::ErrnoToStatus(errno, "failed to bind UDP socket");
+    }
+  } else {
+    return absl::UnimplementedError("unsupported IP version");
+  }
+
+  return std::make_shared<UDPSocket>(conduit, fd);
+}
+
 UDPSocket::UDPSocket(Conduit* conduit, int fd) : conduit_(conduit),
   closed_(false), max_pkt_len_(4096), fd_(fd) {
   listener_ = std::make_shared<cd::EventListener>(fd);
