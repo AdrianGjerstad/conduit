@@ -214,6 +214,151 @@ std::ostream& operator<<(std::ostream& os, const DNSMailExchange& mx) {
   return os;
 }
 
+DNSStartOfAuthority::DNSStartOfAuthority(const DNSName& auth_ns,
+  absl::string_view email, uint32_t serial, absl::Duration refresh,
+  absl::Duration retry, absl::Duration expire, absl::Duration default_ttl) :
+  auth_ns_(auth_ns), email_(email), serial_(serial), refresh_(refresh),
+  retry_(retry), expire_(expire), default_ttl_(default_ttl) {
+  // Nothing to do.
+}
+
+const DNSName& DNSStartOfAuthority::AuthoritativeNS() const {
+  return auth_ns_;
+}
+
+void DNSStartOfAuthority::AuthoritativeNS(const DNSName& auth_ns) {
+  auth_ns_ = auth_ns;
+}
+
+const std::string& DNSStartOfAuthority::Email() const {
+  return email_;
+}
+
+void DNSStartOfAuthority::Email(absl::string_view email) {
+  email_ = std::string(email);
+}
+
+uint32_t DNSStartOfAuthority::Serial() const {
+  return serial_;
+}
+
+void DNSStartOfAuthority::Serial(uint32_t serial) {
+  serial_ = serial;
+}
+
+absl::Duration DNSStartOfAuthority::RefreshInterval() const {
+  return refresh_;
+}
+
+void DNSStartOfAuthority::RefreshInterval(absl::Duration refresh) {
+  refresh_ = refresh;
+}
+
+absl::Duration DNSStartOfAuthority::RetryDelay() const {
+  return retry_;
+}
+
+void DNSStartOfAuthority::RetryDelay(absl::Duration retry) {
+  retry_ = retry;
+}
+
+absl::Duration DNSStartOfAuthority::ExpirationTime() const {
+  return expire_;
+}
+
+void DNSStartOfAuthority::ExpirationTime(absl::Duration expire) {
+  expire_ = expire;
+}
+
+absl::Duration DNSStartOfAuthority::DefaultTTL() const {
+  return default_ttl_;
+}
+
+void DNSStartOfAuthority::DefaultTTL(absl::Duration default_ttl) {
+  default_ttl_ = default_ttl;
+}
+
+void DNSStartOfAuthority::Serialize(std::ostringstream* os,
+  absl::flat_hash_map<std::string, int>* comp_map) const {
+  uint32_t refresh = htonl(absl::ToInt64Seconds(refresh_));
+  uint32_t retry = htonl(absl::ToInt64Seconds(retry_));
+  uint32_t expire = htonl(absl::ToInt64Seconds(expire_));
+  uint32_t default_ttl = htonl(absl::ToInt64Seconds(default_ttl_));
+
+  auth_ns_.Serialize(os, comp_map);
+
+  std::string email_name(email_);
+  auto pos = email_name.find('@');
+  if (pos != std::string::npos) {
+    email_name[pos] = '.';
+  }
+  DNSName email(email_name);
+
+  email.Serialize(os, comp_map);
+
+  *os << std::string((const char*)&serial_, sizeof(serial_));
+  *os << std::string((char*)&refresh, sizeof(refresh));
+  *os << std::string((char*)&retry, sizeof(retry));
+  *os << std::string((char*)&expire, sizeof(expire));
+  *os << std::string((char*)&default_ttl, sizeof(default_ttl));
+}
+
+absl::StatusOr<DNSStartOfAuthority> DNSStartOfAuthority::Deserialize(
+  absl::string_view* s, absl::string_view msg) {
+  absl::StatusOr<DNSName> auth_ns_s = DNSName::Deserialize(s, msg);
+  if (!auth_ns_s.ok()) {
+    return auth_ns_s.status();
+  }
+
+  absl::StatusOr<DNSName> email_s = DNSName::Deserialize(s, msg);
+  if (!email_s.ok()) {
+    return email_s.status();
+  }
+
+  std::string email(email_s.value().Name());
+  auto pos = email.find('.');
+  if (pos != std::string::npos) {
+    email[pos] = '@';
+  }
+
+  // Make sure we have enough room for the remainder of the record
+  if (s->size() < 16) {
+    return absl::InvalidArgumentError("truncated message");
+  }
+
+#define READ_U32(name) \
+  uint32_t name =\
+    (((uint32_t)static_cast<uint8_t>((*s)[0])) << 24) |\
+    (((uint32_t)static_cast<uint8_t>((*s)[1])) << 16) |\
+    (((uint32_t)static_cast<uint8_t>((*s)[2])) <<  8) |\
+     ((uint32_t)static_cast<uint8_t>((*s)[3]));\
+  s->remove_prefix(4)
+#define READ_DURATION_U32(name) \
+  READ_U32(name##_seconds);\
+  absl::Duration name = absl::Seconds(name##_seconds)
+
+  READ_U32(serial);
+  READ_DURATION_U32(refresh);
+  READ_DURATION_U32(retry);
+  READ_DURATION_U32(expire);
+  READ_DURATION_U32(default_ttl);
+#undef READ_DURATION_U32
+#undef READ_U32
+
+  return DNSStartOfAuthority(auth_ns_s.value(), email, serial, refresh, retry,
+    expire, default_ttl);
+}
+
+std::ostream& operator<<(std::ostream& os, const DNSStartOfAuthority& soa) {
+  os << soa.AuthoritativeNS() << " <" << soa.Email()
+     << "> serial " << soa.Serial()
+     << " refresh " << soa.RefreshInterval()
+     << " retry " << soa.RetryDelay()
+     << " expire " << soa.ExpirationTime()
+     << " default TTL " << soa.DefaultTTL();
+  return os;
+}
+
 std::string StringifyDNSRecordType(const DNSRecordType& type) {
   switch (type) {
   case DNSRecordType::kA: return "A";
@@ -400,6 +545,15 @@ absl::StatusOr<DNSRecord> DNSRecord::Deserialize(absl::string_view* pkt,
     }
     return DNSRecord(name_s.value(), type, c, ttl, ip.value());
   }
+  case DNSRecordType::kSOA: {
+    absl::StatusOr<DNSStartOfAuthority> soa = DNSStartOfAuthority::Deserialize(
+      &content, msg
+    );
+    if (!soa.ok()) {
+      return soa.status();
+    }
+    return DNSRecord(name_s.value(), type, c, ttl, soa.value());
+  }
   default:
     // Unknown answer type
     content.remove_suffix(content.size() - rdlen);
@@ -422,6 +576,12 @@ DNSRecord::DNSRecord(const DNSName& name, DNSRecordType t, DNSRecordClass c,
 DNSRecord::DNSRecord(const DNSName& name, DNSRecordType t, DNSRecordClass c,
   absl::Duration ttl, const DNSMailExchange& mx) : name_(name), type_(t),
   class_(c), ttl_(ttl), expiry_(absl::Now() + ttl), value_(mx) {
+  // Nothing to do.
+}
+
+DNSRecord::DNSRecord(const DNSName& name, DNSRecordType t, DNSRecordClass c,
+  absl::Duration ttl, const DNSStartOfAuthority& soa) : name_(name), type_(t),
+  class_(c), ttl_(ttl), expiry_(absl::Now() + ttl), value_(soa) {
   // Nothing to do.
 }
 
@@ -488,6 +648,16 @@ absl::Status DNSRecord::Serialize(std::ostringstream* os,
     mx.Serialize(os, comp_map);
     break;
   }
+  case DNSRecordType::kSOA: {
+    if (!std::holds_alternative<DNSStartOfAuthority>(value_)) {
+      return absl::InternalError(
+        "mx type but answer is not a DNSMailExchange"
+      );
+    }
+    DNSStartOfAuthority soa = std::get<DNSStartOfAuthority>(value_);
+    soa.Serialize(os, comp_map);
+    break;
+  }
   case DNSRecordType::kTXT: {
     if (!std::holds_alternative<std::string>(value_)) {
       return absl::InternalError(
@@ -519,6 +689,7 @@ std::ostream& operator<<(std::ostream& os, const DNSRecord& ans) {
   bool is_addr = std::holds_alternative<IPAddress>(ans.value_);
   bool is_name = std::holds_alternative<DNSName>(ans.value_);
   bool is_mx = std::holds_alternative<DNSMailExchange>(ans.value_);
+  bool is_soa = std::holds_alternative<DNSStartOfAuthority>(ans.value_);
   bool is_txt = std::holds_alternative<std::string>(ans.value_);
   std::string err("<record type and internal value type mismatch>");
 
@@ -543,6 +714,10 @@ std::ostream& operator<<(std::ostream& os, const DNSRecord& ans) {
   case DNSRecordType::kMX:
     if (!is_mx) return os << err;
     os << "mx " << std::get<DNSMailExchange>(ans.value_);
+    break;
+  case DNSRecordType::kSOA:
+    if (!is_soa) return os << err;
+    os << "soa " << std::get<DNSStartOfAuthority>(ans.value_);
     break;
   case DNSRecordType::kTXT:
     if (!is_txt) return os << err;
@@ -609,6 +784,15 @@ absl::StatusOr<const DNSMailExchange> DNSRecord::ValueAsMailExchange() const {
     return std::get<DNSMailExchange>(value_);
   } catch(...) {
     return absl::FailedPreconditionError("not holding a DNSMailExchange");
+  }
+}
+
+absl::StatusOr<const DNSStartOfAuthority> DNSRecord::ValueAsStartOfAuthority()
+  const {
+  try {
+    return std::get<DNSStartOfAuthority>(value_);
+  } catch(...) {
+    return absl::FailedPreconditionError("not holding a DNSStartOfAuthority");
   }
 }
 

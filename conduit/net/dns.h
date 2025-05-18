@@ -112,6 +112,61 @@ private:
   DNSName name_;
 };
 
+// Describes an SOA record
+class DNSStartOfAuthority {
+public:
+  // Not default-constructible
+  DNSStartOfAuthority() = delete;
+
+  // Constructs a new SOA record with the Authoritative Nameserver, Contact
+  // email address (@ is internally replaced with .), serial number, refresh
+  // interval, retry delay, expiration of authority time, and default TTL for
+  // records in the corresponding zone.
+  DNSStartOfAuthority(const DNSName& auth_ns, absl::string_view email,
+    uint32_t serial, absl::Duration refresh, absl::Duration retry,
+    absl::Duration expire, absl::Duration default_ttl);
+
+  const DNSName& AuthoritativeNS() const;
+  void AuthoritativeNS(const DNSName& auth_ns);
+
+  // Returns the email address as would appear over SMTP, not over DNS
+  const std::string& Email() const;
+  void Email(absl::string_view email);
+
+  uint32_t Serial() const;
+  void Serial(uint32_t serial);
+
+  absl::Duration RefreshInterval() const;
+  void RefreshInterval(absl::Duration refresh);
+
+  absl::Duration RetryDelay() const;
+  void RetryDelay(absl::Duration retry);
+
+  absl::Duration ExpirationTime() const;
+  void ExpirationTime(absl::Duration expire);
+
+  absl::Duration DefaultTTL() const;
+  void DefaultTTL(absl::Duration default_ttl);
+
+  void Serialize(std::ostringstream* os,
+                 absl::flat_hash_map<std::string, int>* comp_map) const;
+
+  static absl::StatusOr<DNSStartOfAuthority> Deserialize(absl::string_view* s,
+    absl::string_view msg);
+
+  friend std::ostream& operator<<(std::ostream& os,
+                                  const DNSStartOfAuthority& soa);
+
+private:
+  DNSName auth_ns_;
+  std::string email_;
+  uint32_t serial_;
+  absl::Duration refresh_;
+  absl::Duration retry_;
+  absl::Duration expire_;
+  absl::Duration default_ttl_;
+};
+
 // Describes types of DNS records, such as A, MX, and TXT
 enum class DNSRecordType : uint16_t {
   kUnknown = 0,               // Description
@@ -205,6 +260,7 @@ public:
     IPAddress,
     DNSName,
     DNSMailExchange,
+    DNSStartOfAuthority,
     std::string
   >;
 
@@ -240,6 +296,13 @@ public:
             DNSRecordClass c,
             absl::Duration ttl,
             const DNSMailExchange& mx);
+
+  // Creates a DNS resource record with a start of authority (SOA)
+  DNSRecord(const DNSName& name,
+            DNSRecordType t,
+            DNSRecordClass c,
+            absl::Duration ttl,
+            const DNSStartOfAuthority& soa);
 
   // Creates a DNS resource record with plain text
   //
@@ -278,6 +341,7 @@ public:
   absl::StatusOr<const IPAddress> ValueAsIP() const;
   absl::StatusOr<const DNSName> ValueAsDomain() const;
   absl::StatusOr<const DNSMailExchange> ValueAsMailExchange() const;
+  absl::StatusOr<const DNSStartOfAuthority> ValueAsStartOfAuthority() const;
   absl::StatusOr<const std::string> ValueAsText() const;
 
   // Checks if this DNSRecord has expired based on the TTL and the time the TTL
@@ -413,12 +477,27 @@ private:
 // completely hides all complexities of DNS from the user, only returning a list
 // of IP addresses to attempt connections to.
 //
+// NameResolver is also configurable in code *only*. The purpose of this is to
+// attempt to make the execution environment as little of a factor as possible
+// in the operation of foundational facilities like this one. The user can
+// (although is discouraged from doing so) parse a system-wide configuration
+// like /etc/resolv.conf and load values into these options.
+//
 // Options:
 // - QueryTimeout: the amount of time the agent should wait for a response
 //   before timing out. (default: 10s)
 // - QueryRetransmitInterval: The amount of time the agent should wait for a
 //   response before attempting to retransmit the query, presuming packet loss.
 //   (default: 500ms)
+// - UseNameServer: adds the IP address of a DNS server to the list of name
+//   servers that this NameResolver queries. By default, the first name server
+//   is queried, and subsequent ones only if the first one does not respond
+//   within the retransmission interval.
+// - RoundRobin: tells the NameResolver whether or not to use a round-robin
+//   approach to selecting which name servers to query. In this mode, the name
+//   server used for a query is the least recently used one. Queries that fail
+//   to yield responses within retransmission intervals get sent to the next one
+//   in the list.
 class NameResolver {
 public:
   // Not default-constructible
@@ -427,12 +506,17 @@ public:
   // Creates a new NameResolver with network capabilities.
   NameResolver(Conduit* conduit);
 
-  // Option getters and setters
+  // Options
   absl::Duration QueryTimeout() const;
   void QueryTimeout(absl::Duration qto);
 
   absl::Duration QueryRetransmitInterval() const;
   void QueryRetransmitInterval(absl::Duration qrti);
+  
+  void UseNameServer(IPAddress addr);
+
+  bool RoundRobin() const;
+  void RoundRobin(bool rr);
 
   // Initiates a DNS query.
   //
