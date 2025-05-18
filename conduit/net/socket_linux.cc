@@ -40,8 +40,15 @@
 #include "conduit/conduit.h"
 #include "conduit/event.h"
 #include "conduit/net/net.h"
+#include "conduit/promise.h"
 
 namespace cd {
+
+// Definitions provided here for use within the socket classes
+class NameResolver {
+public:
+  std::shared_ptr<Promise<std::vector<IPAddress>>> Resolve(absl::string_view);
+};
 
 absl::StatusOr<std::shared_ptr<UDPSocket>> UDPSocket::Connect(
   Conduit* conduit, IPAddress host, uint16_t port) {
@@ -82,6 +89,63 @@ absl::StatusOr<std::shared_ptr<UDPSocket>> UDPSocket::Connect(
   }
 
   return std::make_shared<UDPSocket>(conduit, fd);
+}
+
+std::shared_ptr<Promise<std::shared_ptr<UDPSocket>>> UDPSocket::Connect(
+  Conduit* conduit, NameResolver* resolver, absl::string_view name,
+  uint16_t port) {
+  auto promise = std::make_shared<Promise<std::shared_ptr<UDPSocket>>>();
+
+  // Attempt `name` as an IP address first.
+  absl::StatusOr<IPAddress> addr_s = IPAddress::From(name);
+  if (!addr_s.ok()) {
+    // Okay that didn't work, lets try it as a domain name.
+    auto resolve_promise = resolver->Resolve(name);
+    resolve_promise->Then([conduit, promise, port](
+      const std::vector<IPAddress>& addrs) {
+      if (addrs.empty()) {
+        promise->Reject(absl::NotFoundError("no addresses for that domain"));
+        return;
+      }
+
+      // Just take the first address.
+      absl::StatusOr<std::shared_ptr<UDPSocket>> socket_s =
+        UDPSocket::Connect(conduit, addrs[0], port);
+      if (!socket_s.ok()) {
+        promise->Reject(socket_s.status());
+        return;
+      }
+
+      promise->Resolve(socket_s.value());
+    });
+    
+    resolve_promise->Catch([promise](absl::Status err) {
+      promise->Reject(err);
+    });
+
+    promise->DependsOnOther(resolve_promise);
+
+    return promise;
+  }
+
+  // IP address parsing was successful
+  absl::StatusOr<std::shared_ptr<UDPSocket>> socket_s =
+    UDPSocket::Connect(conduit, addr_s.value(), port);
+
+  if (!socket_s.ok()) {
+    auto err = socket_s.status();
+    conduit->OnNext([promise, err]() {
+      promise->Reject(err);
+    });
+    return promise;
+  }
+
+  auto socket = socket_s.value();
+  conduit->OnNext([promise, socket]() {
+    promise->Resolve(socket);
+  });
+
+  return promise;
 }
 
 absl::StatusOr<std::shared_ptr<UDPSocket>> UDPSocket::Create(Conduit* conduit) {

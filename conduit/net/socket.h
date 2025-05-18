@@ -35,8 +35,12 @@
 #include "conduit/conduit.h"
 #include "conduit/event.h"
 #include "conduit/net/net.h"
+#include "conduit/promise.h"
 
 namespace cd {
+
+// Defined in conduit/net/dns.h. Declared here for pointer use in below classes.
+class NameResolver;
 
 // Represents a socket that uses UDP on the transport layer.
 //
@@ -54,6 +58,13 @@ public:
     IPAddress host,
     uint16_t port
   );
+
+  static std::shared_ptr<Promise<std::shared_ptr<UDPSocket>>> Connect(
+    Conduit* conduit,
+    NameResolver* resolver,
+    absl::string_view name,
+    uint16_t port
+  ); 
 
   // Creates a new UDP socket with no specified peer address and port.
   //
