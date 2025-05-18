@@ -513,6 +513,7 @@ public:
   absl::Duration QueryRetransmitInterval() const;
   void QueryRetransmitInterval(absl::Duration qrti);
   
+  // Must be called at least once in order to perform queries.
   void UseNameServer(const IPAddress& addr);
 
   bool RoundRobin() const;
@@ -602,6 +603,9 @@ private:
   // Options
   absl::Duration query_timeout_;
   absl::Duration query_retransmit_interval_;
+  std::vector<IPAddress> nameservers_;
+  bool round_robin_;
+  size_t rr_index_;
 };
 
 }

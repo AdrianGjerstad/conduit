@@ -154,7 +154,10 @@ absl::StatusOr<DNSName> DNSName::Deserialize(absl::string_view* s,
   s->remove_prefix(remove_from_stream);
 
   // Trailing '.'
-  name.pop_back();
+  if (!name.empty()) {
+    name.pop_back();
+  }
+
   return DNSName(name);
 }
 
@@ -1106,24 +1109,18 @@ std::vector<DNSRecord>* DNSMessage::MutableAdditionalRecords() {
 
 NameResolver::NameResolver(Conduit* conduit) : conduit_(conduit),
   next_id_(0x241a), query_timeout_(absl::Seconds(10)),
-  query_retransmit_interval_(absl::Milliseconds(500)) {
-  // For now we just use Google's public DNS service.
-  absl::StatusOr<IPAddress> resolver_s = IPAddress::From("8.8.8.8");
-  if (!resolver_s.ok()) {
-    // How? I don't know.
-    return;
-  }
-
-  absl::StatusOr<std::shared_ptr<UDPSocket>> socket_s =
-    UDPSocket::Connect(conduit, resolver_s.value(), 53);
+  query_retransmit_interval_(absl::Milliseconds(500)), round_robin_(false),
+  rr_index_(0) {
+  absl::StatusOr<std::shared_ptr<UDPSocket>> socket_s = UDPSocket::Create(conduit);
   if (!socket_s.ok()) {
-    // We failed to "connect" for some bizarre reason.
+    // We failed to create the socket for some bizarre reason.
     return;
   }
 
   socket_ = socket_s.value();
 
-  socket_->OnData([this](absl::string_view data) {
+  socket_->OnData([this](absl::string_view data, IPAddress host,
+    uint16_t port) {
     HandleIncomingMessage(data);
   });
 
@@ -1146,9 +1143,29 @@ void NameResolver::QueryRetransmitInterval(absl::Duration qrti) {
   query_retransmit_interval_ = qrti;
 }
 
+void NameResolver::UseNameServer(const IPAddress& addr) {
+  nameservers_.push_back(addr);
+}
+
+bool NameResolver::RoundRobin() const {
+  return round_robin_;
+}
+
+void NameResolver::RoundRobin(bool rr) {
+  round_robin_ = rr;
+  rr_index_ = 0;
+}
+
 std::shared_ptr<Promise<DNSMessage>> NameResolver::Query(DNSMessage* msg) {
   auto promise = std::make_shared<Promise<DNSMessage>>(conduit_,
     query_timeout_);
+
+  if (nameservers_.empty()) {
+    conduit_->OnNext([promise]() {
+      promise->Reject(absl::FailedPreconditionError("no nameservers set!"));
+    });
+    return promise;
+  }
 
   msg->ID(next_id_);
   ++next_id_;
@@ -1168,17 +1185,47 @@ std::shared_ptr<Promise<DNSMessage>> NameResolver::Query(DNSMessage* msg) {
   }
 
   auto pkt = pkt_s.value();
-  socket_->Write(pkt_s.value());
-  auto retransmit_interval = conduit_->OnInterval(query_retransmit_interval_,
-    [this, pkt](std::shared_ptr<Timer> self) {
-    socket_->Write(pkt);
-  });
-
-  pending_queries_[msg->ID()] = promise;
-  pending_retransmits_[msg->ID()] = retransmit_interval;
-  socket_->MarkPending();
+  size_t ns_index = 0;
+  if (round_robin_) {
+    ns_index = rr_index_ % nameservers_.size();
+    ++rr_index_;
+    rr_index_ %= nameservers_.size();
+  }
+  absl::Status werr = socket_->Write(pkt_s.value(), nameservers_[ns_index], 53);
+  if (!werr.ok()) {
+    conduit_->OnNext([promise, werr]() {
+      promise->Reject(werr);
+    });
+    return promise;
+  }
 
   auto id = msg->ID();
+  auto retransmit_interval = conduit_->OnInterval(query_retransmit_interval_,
+    [this, pkt, ns_index, promise, id](std::shared_ptr<Timer> self) mutable {
+    if (round_robin_) {
+      ns_index = rr_index_ % nameservers_.size();
+      ++rr_index_;
+      rr_index_ %= nameservers_.size();
+    } else {
+      ++ns_index;
+      ns_index %= nameservers_.size();
+    }
+
+    absl::Status werr = socket_->Write(pkt, nameservers_[ns_index], 53);
+    if (!werr.ok()) {
+      conduit_->CancelTimer(self);
+      pending_queries_.erase(id);
+      pending_retransmits_.erase(id);
+      conduit_->OnNext([promise, werr]() {
+        promise->Reject(werr);
+      });
+    }
+  });
+
+  pending_queries_[id] = promise;
+  pending_retransmits_[id] = retransmit_interval;
+  socket_->MarkPending();
+
   promise->OnTimeout([this, id, retransmit_interval]() {
     // Operation Timeout
     conduit_->CancelTimer(retransmit_interval);

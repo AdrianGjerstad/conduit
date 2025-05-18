@@ -55,6 +55,14 @@ public:
     uint16_t port
   );
 
+  // Creates a new UDP socket with no specified peer address and port.
+  //
+  // When creating UDP sockets with this method, you must use the overload of
+  // Write() that takes a host and port address. Performs an implicit bind on
+  // the underlying socket upon use of Write. For a more server-esque program,
+  // use UDPSocket::Bind.
+  static absl::StatusOr<std::shared_ptr<UDPSocket>> Create(Conduit* conduit);
+
   // Constructs a UDP socket that owns the given file descriptor.
   UDPSocket(Conduit* conduit, int fd);
 
@@ -70,14 +78,27 @@ public:
 
   // Registers a callback for when a packet is received.
   //
+  // The given callback must take the following parameters, in this order:
+  // packet data, followed by the host address of the peer, followed by the port
+  // of the peer.
+  //
   // Note: a callback must be assigned in the same Conduit runtime loop
   // iteration that the UDPSocket was created in, or else you risk not
   // receiving some packets. It is enough to just call this method after
   // obtaining the UDPSocket pointer for the first time.
-  void OnData(std::function<void(absl::string_view)> on_data);
+  void OnData(std::function<void(absl::string_view, IPAddress, uint16_t)>
+              on_data);
 
   // Sends a packet to the "peer" of this socket.
-  void Write(absl::string_view data);
+  //
+  // Fails if no peer has been set.
+  absl::Status Write(absl::string_view data);
+
+  // Sends a packet to the given host and port from this socket.
+  //
+  // Can be used even with a peer set. Fails if the IPAddress has an unknown
+  // version or the port == 0.
+  absl::Status Write(absl::string_view data, IPAddress host, uint16_t port);
 
   // Closes the "connection"/underlying socket.
   void Close();
@@ -102,13 +123,13 @@ private:
 
   Conduit* conduit_;
   std::shared_ptr<cd::EventListener> listener_;
-  std::function<void(absl::string_view)> on_data_;
+  std::function<void(absl::string_view, IPAddress, uint16_t)> on_data_;
   bool closed_;
   size_t max_pkt_len_;
   int fd_;
 
   // A queue of packets to be sent once the socket becomes writable again.
-  std::queue<std::string> packets_;
+  std::queue<std::tuple<std::string, IPAddress, uint16_t>> packets_;
 };
 
 }
