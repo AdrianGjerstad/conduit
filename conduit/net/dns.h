@@ -513,7 +513,7 @@ public:
   absl::Duration QueryRetransmitInterval() const;
   void QueryRetransmitInterval(absl::Duration qrti);
   
-  void UseNameServer(IPAddress addr);
+  void UseNameServer(const IPAddress& addr);
 
   bool RoundRobin() const;
   void RoundRobin(bool rr);
@@ -535,6 +535,13 @@ public:
   // Performs a Lookup() to get an IP address for the given domain.
   std::shared_ptr<Promise<std::vector<IPAddress>>> Resolve(
     absl::string_view name);
+
+  // Performs a reverse DNS (rDNS) lookup for a given IPAddress (automatically
+  // differentiates between versions).
+  //
+  // Although RFC requires there to be a PTR record for every address, this is
+  // not an IETF standard, so this method may fail with NXDOMAIN.
+  std::shared_ptr<Promise<DNSName>> ReverseLookup(const IPAddress& addr);
 
   // Purges expired DNS records from the internal in-memory cache.
   void PruneCache();

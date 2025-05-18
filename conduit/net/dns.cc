@@ -522,7 +522,9 @@ absl::StatusOr<DNSRecord> DNSRecord::Deserialize(absl::string_view* pkt,
     }
     return DNSRecord(name_s.value(), type, c, ttl, ip.value());
   }
-  case DNSRecordType::kCNAME: {
+  case DNSRecordType::kCNAME:
+  case DNSRecordType::kPTR:
+  case DNSRecordType::kNS: {
     absl::StatusOr<DNSName> dname = DNSName::Deserialize(&content, msg);
     if (!dname.ok()) {
       return dname.status();
@@ -1309,6 +1311,92 @@ std::shared_ptr<Promise<std::vector<IPAddress>>> NameResolver::Resolve(
   lookup_promise->Catch([promise](absl::Status err) {
     promise->Reject(err);
   });
+  promise->DependsOnOther(lookup_promise);
+
+  return promise;
+}
+
+std::shared_ptr<Promise<DNSName>> NameResolver::ReverseLookup(
+  const IPAddress& addr) {
+  // DNS only allows us to query domain names, so the solution was to create a
+  // new record type (PTR), a domain suffix (either in-addr.arpa or ip6.arpa),
+  // and a transformation method for converting IP addresses into domain names.
+  std::ostringstream os;
+  auto promise = std::make_shared<Promise<DNSName>>();
+  if (addr.Version() == IPAddress::IPVersion::k4) {
+    const std::string& bytes = addr.AddressAsBytes();
+    os << (unsigned int)static_cast<uint8_t>(bytes[3]) << '.';
+    os << (unsigned int)static_cast<uint8_t>(bytes[2]) << '.';
+    os << (unsigned int)static_cast<uint8_t>(bytes[1]) << '.';
+    os << (unsigned int)static_cast<uint8_t>(bytes[0]) << '.';
+    os << "in-addr.arpa";
+  } else if (addr.Version() == IPAddress::IPVersion::k6) {
+    const std::string& bytes = addr.AddressAsBytes();
+    auto output_hex = [&os](uint8_t byte) {
+      uint8_t nibble_hi = byte >> 4;
+      uint8_t nibble_lo = byte & 0xF;
+
+      if (nibble_hi < 10) {
+        os << (char)(nibble_hi + '0');
+      } else {
+        os << (char)(nibble_hi - 10 + 'a');
+      }
+
+      os << '.';
+
+      if (nibble_lo < 10) {
+        os << (char)(nibble_lo + '0');
+      } else {
+        os << (char)(nibble_lo - 10 + 'a');
+      }
+
+      os << '.';
+    };
+
+    for (int i = 15; i >= 0; --i) {
+      output_hex(static_cast<uint8_t>(bytes[i]));
+    }
+
+    os << "ip6.arpa";
+  } else {
+    conduit_->OnNext([promise]() {
+      promise->Reject(absl::InternalError("unknown IP address version"));
+    });
+
+    return promise;
+  }
+
+  auto lookup_promise = Lookup(os.str(), DNSRecordType::kPTR);
+  lookup_promise->Then([promise](const std::vector<DNSRecord>& records) {
+    if (records.size() != 1) {
+      promise->Reject(absl::AbortedError(
+        "number of records returned was not exactly one"
+      ));
+      return;
+    }
+
+    const DNSRecord& rec = records[0];
+
+    if (rec.Type() != DNSRecordType::kPTR) {
+      promise->Reject(absl::AbortedError(
+        "requested PTR record, server returned something else"
+      ));
+      return;
+    }
+
+    absl::StatusOr<const DNSName> name_s = rec.ValueAsDomain();
+    if (!name_s.ok()) {
+      promise->Reject(name_s.status());
+      return;
+    }
+
+    promise->Resolve(name_s.value());
+  });
+
+  lookup_promise->Catch([promise](absl::Status err) {
+    promise->Reject(err);
+  });
+
   promise->DependsOnOther(lookup_promise);
 
   return promise;
