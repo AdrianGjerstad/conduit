@@ -36,6 +36,7 @@
 #include "conduit/event.h"
 #include "conduit/net/net.h"
 #include "conduit/promise.h"
+#include "conduit/stream/stream.h"
 
 namespace cd {
 
@@ -149,6 +150,34 @@ private:
 
   // A queue of packets to be sent once the socket becomes writable again.
   std::queue<std::tuple<std::string, IPAddress, uint16_t>> packets_;
+};
+
+// Represents a plain-text TCP stream-mode connection
+class TCPSocket : public DuplexStream {
+public:
+  // Connects to a remote host at the given port.
+  static std::shared_ptr<Promise<std::shared_ptr<TCPSocket>>> Connect(
+    Conduit* conduit,
+    IPAddress addr,
+    uint16_t port,
+    bool allow_half_open = false
+  );
+
+  // Creates a TCP socket that owns an underlying fd
+  TCPSocket(Conduit* conduit, int fd, bool allow_half_open);
+  
+private:
+  void FullClose();
+  void CloseReadable() override;
+  void CloseWritable() override;
+  size_t TryWriteData(absl::string_view data) override;
+
+  void DoRecv();
+
+  Conduit* conduit_;
+  int fd_;
+  bool half_closed_;
+  std::shared_ptr<EventListener> listener_;
 };
 
 }

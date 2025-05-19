@@ -39,21 +39,25 @@
 
 #include "conduit/conduit.h"
 #include "conduit/event.h"
+#include "conduit/net/dns.h"
 #include "conduit/net/net.h"
 #include "conduit/promise.h"
 
 namespace cd {
 
-// Definitions provided here for use within the socket classes
-class NameResolver {
-public:
-  std::shared_ptr<Promise<std::vector<IPAddress>>> Resolve(absl::string_view);
-};
-
 absl::StatusOr<std::shared_ptr<UDPSocket>> UDPSocket::Connect(
   Conduit* conduit, IPAddress host, uint16_t port) {
   // Create socket
-  int fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+  int family;
+  if (host.Version() == IPAddress::IPVersion::k4) {
+    family = AF_INET;
+  } else if (host.Version() == IPAddress::IPVersion::k6) {
+    family = AF_INET6;
+  } else {
+    return absl::UnimplementedError("unsupported IP version");
+  }
+
+  int fd = socket(family, SOCK_DGRAM | SOCK_NONBLOCK, 0);
   if (fd < 0) {
     // All potential errors are either irrecoverable or user error.
     return absl::ErrnoToStatus(errno, "failed to create UDP socket");
@@ -162,7 +166,16 @@ absl::StatusOr<std::shared_ptr<UDPSocket>> UDPSocket::Create(Conduit* conduit) {
 absl::StatusOr<std::shared_ptr<UDPSocket>> UDPSocket::Bind(Conduit* conduit,
   IPAddress host, uint16_t port) {
   // Create socket
-  int fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+  int family;
+  if (host.Version() == IPAddress::IPVersion::k4) {
+    family = AF_INET;
+  } else if (host.Version() == IPAddress::IPVersion::k6) {
+    family = AF_INET6;
+  } else {
+    return absl::UnimplementedError("unsupported IP version");
+  }
+
+  int fd = socket(family, SOCK_DGRAM | SOCK_NONBLOCK, 0);
   if (fd < 0) {
     // All potential errors are either irrecoverable or user error.
     return absl::ErrnoToStatus(errno, "failed to create UDP socket");
@@ -415,6 +428,190 @@ void UDPSocket::Flush() {
 
   // All packets have been flushed
   listener_->OffWritable();
+}
+
+std::shared_ptr<Promise<std::shared_ptr<TCPSocket>>> TCPSocket::Connect(
+  Conduit* conduit, IPAddress host, uint16_t port, bool allow_half_open) {
+  auto promise = std::make_shared<Promise<std::shared_ptr<TCPSocket>>>();
+  
+  // Create the socket
+  int family;
+  if (host.Version() == IPAddress::IPVersion::k4) {
+    family = AF_INET;
+  } else if (host.Version() == IPAddress::IPVersion::k6) {
+    family = AF_INET6;
+  } else {
+    absl::Status err = absl::UnimplementedError("unsupported IP version");
+    conduit->OnNext([promise, err]() {
+      promise->Reject(err);
+    });
+    return promise;
+  }
+
+  int fd = socket(family, SOCK_STREAM | SOCK_NONBLOCK, 0);
+  if (fd < 0) {
+    absl::Status err = absl::ErrnoToStatus(errno, "failed to create socket");
+    conduit->OnNext([promise, err]() {
+      promise->Reject(err);
+    });
+    return promise;
+  }
+
+  // Connect to the peer
+  int res;
+  if (host.Version() == IPAddress::IPVersion::k4){
+    struct sockaddr_in sa;
+    sa.sin_family = AF_INET;
+    memcpy(&sa.sin_addr.s_addr, host.AddressAsBytes().data(),
+           host.AddressAsBytes().size());
+    sa.sin_port = htons(port);
+
+    while ((res = connect(fd, (struct sockaddr*)&sa, sizeof(sa))) &&
+           errno == EINTR);
+  } else if (host.Version() == IPAddress::IPVersion::k6) {
+    struct sockaddr_in6 sa;
+    sa.sin6_family = AF_INET6;
+    memcpy(sa.sin6_addr.s6_addr, host.AddressAsBytes().data(),
+           host.AddressAsBytes().size());
+    sa.sin6_port = htons(port);
+
+    while ((res = connect(fd, (struct sockaddr*)&sa, sizeof(sa))) &&
+           errno == EINTR);
+  } else {
+    absl::Status err = absl::UnimplementedError("unsupported IP version");
+    conduit->OnNext([promise, err]() {
+      promise->Reject(err);
+    });
+    return promise;
+  }
+
+  if (res < 0) {
+    if (errno == EINPROGRESS) {
+      // TCP connection attempt started, we just need to wait for results.
+      auto listener = std::make_shared<EventListener>(fd);
+      listener->OnWritable([conduit, promise, listener, allow_half_open](
+        int fd) {
+        conduit->Remove(listener).IgnoreError();
+        int err;
+        socklen_t errlen = sizeof(err);
+
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen)) {
+          promise->Reject(absl::InternalError(
+            "failed to check connection status after attempting to connect"
+          ));
+        }
+
+        if (err == 0) {
+          promise->Resolve(std::make_shared<TCPSocket>(conduit, fd,
+                                                       allow_half_open));
+          return;
+        }
+
+        promise->Reject(absl::ErrnoToStatus(err, "failed to connect"));
+      });
+
+      conduit->Add(listener).IgnoreError();
+      return promise;
+    }
+
+    // Something happened that caused connect to fail way early.
+    absl::Status err = absl::ErrnoToStatus(errno, "failed to connect");
+    conduit->OnNext([promise, err]() {
+      promise->Reject(err);
+    });
+
+    return promise;
+  }
+
+  // For some weird reason, the connection succeeded after just calling connect,
+  // even though the socket is non-blocking.
+  conduit->OnNext([conduit, promise, fd, allow_half_open]() {
+    promise->Resolve(std::make_shared<TCPSocket>(conduit, fd, allow_half_open));
+  });
+  return promise;
+}
+
+TCPSocket::TCPSocket(Conduit* conduit, int fd, bool allow_half_open) :
+  DuplexStream(allow_half_open), conduit_(conduit), fd_(fd),
+  half_closed_(false) {
+  listener_ = std::make_shared<EventListener>(fd_);
+
+  listener_->OnReadable([this](int fd) {
+    DoRecv();
+  });
+
+  listener_->OnHangup([this](int fd) {
+    HandleRdHup();
+  });
+
+  conduit_->Add(listener_).IgnoreError();
+}
+
+void TCPSocket::FullClose() {
+  conduit_->Remove(listener_).IgnoreError();
+  close(fd_);
+}
+
+void TCPSocket::CloseReadable() {
+  half_closed_ = !half_closed_;
+  shutdown(SHUT_RD, fd_);
+  if (!half_closed_) {
+    FullClose();
+  }
+}
+
+void TCPSocket::CloseWritable() {
+  half_closed_ = !half_closed_;
+  shutdown(SHUT_WR, fd_);
+  if (!half_closed_) {
+    FullClose();
+  }
+}
+
+size_t TCPSocket::TryWriteData(absl::string_view data) {
+  ssize_t count = send(fd_, data.data(), data.size(), 0);
+
+  if (count < 0) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      // We must set an OnWritable listener. The kernel buffer must be full.
+      listener_->OnWritable([this](int fd) {
+        TryFlushWriteEnd();
+      });
+    }
+
+    return 0;
+  }
+
+  if ((size_t)count < data.size()) {
+    // Not everything was sent. The kernel buffer must be full.
+    listener_->OnWritable([this](int fd) {
+      TryFlushWriteEnd();
+    });
+    
+    return count;
+  }
+
+  // Everything was written.
+  if (listener_->HasWritable()) {
+    listener_->OffWritable();
+  }
+
+  return count;
+}
+
+void TCPSocket::DoRecv() {
+  std::string buffer(4096, 0);
+  ssize_t count = recv(fd_, buffer.data(), buffer.size(), 0);
+
+  if (count < 0) {
+    // No errors should result because this method should only be called when
+    // data is available.
+    return;
+  }
+
+  absl::string_view view(buffer);
+  view.remove_suffix(buffer.size() - count);
+  HandleData(view);
 }
 
 }

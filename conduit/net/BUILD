@@ -13,20 +13,13 @@
 # limitations under the License.
 #
 
+# Sources have been moved to //conduit/net:socket because some socket methods
+# rely on NameResolver, which was defined in the dns library. This stub is left
+# here for backwards compatibility.
 cc_library(
     name = "dns",
-    srcs = ["dns.cc"],
-    hdrs = ["dns.h"],
     deps = [
-        ":net",
         ":socket",
-        "//conduit",
-        "//conduit:promise",
-        "@abseil-cpp//absl/status",
-        "@abseil-cpp//absl/status:statusor",
-        "@abseil-cpp//absl/strings",
-        "@abseil-cpp//absl/strings:string_view",
-        "@abseil-cpp//absl/time",
     ],
     visibility = ["//visibility:public"],
 )
@@ -54,15 +47,22 @@ cc_library(
 cc_library(
     name = "socket",
     srcs = select({
-        "@platforms//os:linux": ["socket_linux.cc"],
+        "@platforms//os:linux": [
+            "dns.cc",
+            "socket_linux.cc",
+        ],
         "//conditions:default": [],
     }),
-    hdrs = ["socket.h"],
+    hdrs = [
+        "dns.h",
+        "socket.h",
+    ],
     deps = [
         ":net",
         "//conduit",
         "//conduit:event",
         "//conduit:promise",
+        "//conduit/stream",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
         "@abseil-cpp//absl/strings:str_format",
