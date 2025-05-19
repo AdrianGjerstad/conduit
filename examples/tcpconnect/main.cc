@@ -25,27 +25,30 @@
 
 #include "absl/status/status.h"
 #include "conduit/conduit.h"
+#include "conduit/net/dns.h"
 #include "conduit/net/net.h"
 #include "conduit/net/socket.h"
 #include "conduit/promise.h"
 
 int main(int argc, char** argv) {
   cd::Conduit conduit;
+  cd::NameResolver resolver(&conduit);
 
   auto promise = cd::TCPSocket::Connect(
     &conduit,
-    cd::IPAddress::From("127.0.0.1").value(),
-    1234
+    &resolver,
+    "tcpbin.com",
+    4242
   );
 
   promise->Then([](std::shared_ptr<cd::TCPSocket> socket) {
     socket->OnData([socket](absl::string_view data) {
-      std::cout << "Received: " << data << std::endl;
+      std::cout << "Received: " << data;
       socket->Close();
     });
 
-    socket->Write("Hello, world!");
-    std::cout << "Sent: Hello, world!" << std::endl;
+    socket->Write("Hello, world!\n");
+    std::cout << "Sent: Hello, world!\n";
   });
 
   promise->Catch([](absl::Status err) {

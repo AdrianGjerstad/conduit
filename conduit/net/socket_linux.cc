@@ -531,6 +531,62 @@ std::shared_ptr<Promise<std::shared_ptr<TCPSocket>>> TCPSocket::Connect(
   return promise;
 }
 
+void TCPConnectNextHost(Conduit* conduit,
+  std::shared_ptr<Promise<std::shared_ptr<TCPSocket>>> promise, uint16_t port,
+  std::vector<IPAddress> addrs, size_t addr_index) {
+  auto conn_promise = TCPSocket::Connect(conduit, addrs[addr_index], port);
+  ++addr_index;
+
+  conn_promise->Then([promise](const std::shared_ptr<TCPSocket>& socket) {
+    promise->Resolve(socket);
+  });
+
+  conn_promise->Catch([conduit, promise, port, addrs, addr_index](
+    absl::Status err) {
+    if (addr_index >= addrs.size()) {
+      promise->Reject(err);
+      return;
+    }
+
+    TCPConnectNextHost(conduit, promise, port, addrs, addr_index);
+  });
+
+  promise->DependsOnOther(conn_promise);
+}
+
+std::shared_ptr<Promise<std::shared_ptr<TCPSocket>>> TCPSocket::Connect(
+  Conduit* conduit, NameResolver* resolver, absl::string_view name,
+  uint16_t port) {
+  // Try parsing name as an IP address first
+  absl::StatusOr<IPAddress> ip_s = IPAddress::From(name);
+  if (ip_s.ok()) {
+    // It was an IP address. Just use normal connect.
+    return TCPSocket::Connect(conduit, ip_s.value(), port);
+  }
+
+  // Must be a hostname.
+  auto resolve_promise = resolver->Resolve(name);
+  auto promise = std::make_shared<Promise<std::shared_ptr<TCPSocket>>>();
+
+  resolve_promise->Then([conduit, promise, port](
+    const std::vector<IPAddress>& addrs) {
+    // Try each address until one succeeds in connecting.
+    if (addrs.empty()) {
+      promise->Reject(absl::NotFoundError("no addresses available"));
+      return;
+    }
+
+    TCPConnectNextHost(conduit, promise, port, addrs, 0);
+  });
+
+  resolve_promise->Catch([promise](absl::Status err) {
+    promise->Reject(err);
+  });
+
+  promise->DependsOnOther(resolve_promise);
+  return promise;
+}
+
 TCPSocket::TCPSocket(Conduit* conduit, int fd, bool allow_half_open) :
   DuplexStream(allow_half_open), conduit_(conduit), fd_(fd),
   half_closed_(false) {

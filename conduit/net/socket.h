@@ -163,6 +163,16 @@ public:
     bool allow_half_open = false
   );
 
+  // Connects to a host at the given port.
+  //
+  // May perform DNS lookups.
+  static std::shared_ptr<Promise<std::shared_ptr<TCPSocket>>> Connect(
+    Conduit* conduit,
+    NameResolver* resolver,
+    absl::string_view name,
+    uint16_t port
+  );
+
   // Creates a TCP socket that owns an underlying fd
   TCPSocket(Conduit* conduit, int fd, bool allow_half_open);
   
