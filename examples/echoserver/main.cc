@@ -22,89 +22,46 @@
 // connections thanks to Conduit's architecture.
 //
 
-#include <arpa/inet.h>
-#include <errno.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-
 #include <iostream>
 #include <memory>
 
+#include "absl/status/status.h"
+#include "absl/status/statusor.h"
+#include "absl/strings/string_view.h"
 #include "conduit/conduit.h"
-#include "conduit/event.h"
-
-int StartServer() {
-  int fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (fd < 0) {
-    std::cout << "socket failed [ERRNO " << errno << ']' << std::endl;
-    return -1;
-  }
-
-  // Listen on 127.0.0.1:1234
-  struct sockaddr_in addr;
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(1234);
-  addr.sin_addr.s_addr = htonl(0x7f000001);
-
-  if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-    std::cout << "bind failed [ERRNO " << errno << ']' << std::endl;
-    close(fd);
-    return -1;
-  }
-
-  if (listen(fd, 4) < 0) {
-    std::cout << "listen failed [ERRNO " << errno << ']' << std::endl;
-    close(fd);
-    return -1;
-  }
-
-  return fd;
-}
+#include "conduit/net/net.h"
+#include "conduit/net/server.h"
+#include "conduit/net/socket.h"
 
 int main(int argc, char** argv) {
   cd::Conduit conduit;
 
-  int server_fd = StartServer();
-  if (server_fd < 0) {
-    std::cerr << "Failed to start the server" << std::endl;
+  absl::StatusOr<std::shared_ptr<cd::TCPServer>> server_s =
+    cd::TCPServer::Create(
+      &conduit,
+      cd::IPAddress::From("127.0.0.1").value(),
+      1234
+    );
+
+  if (!server_s.ok()) {
+    std::cerr << "Failed to create server: " << server_s.status() << std::endl;
     return 1;
   }
 
-  auto server_listener = std::make_shared<cd::EventListener>(server_fd);
-  server_listener->OnAcceptable([&conduit](int fd) {
-    int sock = accept4(fd, NULL, NULL, SOCK_NONBLOCK);
-    if (sock < 0) {
-      return;
-    }
+  auto server = server_s.value();
 
-    auto sock_listener = std::make_shared<cd::EventListener>(sock);
-
-    sock_listener->OnReadable([](int fd) {
-      constexpr int kMaxCount = 1024;
-      char buffer[kMaxCount];
-      ssize_t count = read(fd, buffer, kMaxCount);
-      if (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-        std::cerr << "read failed [ERRNO " << errno << ']' << std::endl;
-        return;
-      }
-
-      // Echo what we got
-      int result = write(fd, buffer, count);
-      if (result < 0) {
-        std::cerr << "write failed [ERRNO " << errno << ']' << std::endl;
-      }
+  server->OnConnection([](std::shared_ptr<cd::TCPSocket> socket) {
+    socket->OnData([socket](absl::string_view data) {
+      socket->Write(data);
     });
-
-    sock_listener->OnHangup([&conduit, &sock_listener](int fd) {
-      shutdown(fd, SHUT_RDWR);
-      close(fd);
-      conduit.Remove(sock_listener).IgnoreError();
-    });
-
-    conduit.Add(sock_listener).IgnoreError();
   });
 
-  conduit.Add(server_listener).IgnoreError();
+  absl::Status err = server->Listen();
+  if (!err.ok()) {
+    server->Shutdown();
+    std::cerr << "Failed to listen: " << err << std::endl;
+    return 1;
+  }
 
   std::cout << "Listening at 127.0.0.1:1234" << std::endl;
 

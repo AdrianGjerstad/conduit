@@ -45,6 +45,25 @@ cc_library(
 )
 
 cc_library(
+    name = "server",
+    srcs = select({
+        "@platforms//os:linux": ["server_linux.cc"],
+        "//conditions:default": [],
+    }),
+    hdrs = ["server.h"],
+    deps = [
+        ":net",
+        ":socket",
+        "//conduit",
+        "//conduit:event",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "socket",
     srcs = select({
         "@platforms//os:linux": [

@@ -603,7 +603,16 @@ TCPSocket::TCPSocket(Conduit* conduit, int fd, bool allow_half_open) :
   conduit_->Add(listener_).IgnoreError();
 }
 
+void TCPSocket::OnCloseAlertServer(std::function<void()> alert) {
+  on_close_alert_server_ = alert;
+}
+
 void TCPSocket::FullClose() {
+  if (on_close_alert_server_) {
+    on_close_alert_server_();
+    on_close_alert_server_ = nullptr;
+  }
+
   conduit_->Remove(listener_).IgnoreError();
   close(fd_);
 }

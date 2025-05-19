@@ -18,7 +18,12 @@ cc_binary(
     srcs = ["main.cc"],
     deps = [
         "//conduit",
-        "//conduit:event",
+        "//conduit/net",
+        "//conduit/net:server",
+        "//conduit/net:socket",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings:string_view",
     ],
     visibility = ["//visibility:public"],
 )

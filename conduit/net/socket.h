@@ -176,6 +176,11 @@ public:
   // Creates a TCP socket that owns an underlying fd
   TCPSocket(Conduit* conduit, int fd, bool allow_half_open);
   
+  // Alert a TCPServer (the one that created this socket) that it has closed.
+  //
+  // Not for public use.
+  void OnCloseAlertServer(std::function<void()> alert);
+
 private:
   void FullClose();
   void CloseReadable() override;
@@ -188,6 +193,8 @@ private:
   int fd_;
   bool half_closed_;
   std::shared_ptr<EventListener> listener_;
+
+  std::function<void()> on_close_alert_server_;
 };
 
 }
