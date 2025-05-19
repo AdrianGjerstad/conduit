@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
 
   std::cout << "Listening at 127.0.0.1:1234" << std::endl;
 
-  conduit.RunForever();
+  conduit.Run();
   return 0;
 }
 
