@@ -21,6 +21,7 @@
 // To properly test this example, you should start the echoserver example first.
 //
 
+#include <iostream>
 #include <memory>
 
 #include "absl/status/status.h"
