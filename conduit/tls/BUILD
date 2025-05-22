@@ -15,7 +15,12 @@
 
 cc_library(
     name = "tls",
-    srcs = ["tls.cc"],
+    srcs = [
+        "context.cc",
+        "session.cc",
+        "session_client.cc",
+        "session_server.cc",
+    ],
     hdrs = ["tls.h"],
     deps = [
         "//conduit/tls/internal:ossl_err",

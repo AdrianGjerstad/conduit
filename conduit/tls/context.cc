@@ -13,10 +13,10 @@
 // limitations under the License.
 //
 // -----------------------------------------------------------------------------
-// File: tls.cc
+// File: context.cc
 // -----------------------------------------------------------------------------
 //
-// This file defines how the core TLS functionality within Conduit operates.
+// This file defines how TLSContext functions internally.
 //
 
 #include "conduit/tls/tls.h"
@@ -43,87 +43,6 @@ void InitializeOSSL() {
   SSL_load_error_strings();
 }
 
-}
-
-TLSSession::~TLSSession() {
-  if (ssl_) {
-    SSL_free(ssl_);
-    ssl_ = NULL;
-  }
-}
-
-TLSSession::TLSSession(const TLSSession& other) : ssl_(other.ssl_) {
-  if (ssl_) {
-    SSL_up_ref(ssl_);
-  }
-}
-
-TLSSession& TLSSession::operator=(const TLSSession& other) {
-  if (ssl_) {
-    if (ssl_ == other.ssl_) {
-      // Self-assignment? Nope, not allowed.
-      return *this;
-    }
-
-    SSL_free(ssl_);
-  }
-
-  ssl_ = other.ssl_;
-  if (ssl_) {
-    SSL_up_ref(ssl_);
-  }
-
-  return *this;
-}
-
-const SSL* TLSSession::OSSLSession() const {
-  return ssl_;
-}
-
-SSL* TLSSession::MutableOSSLSession() {
-  return ssl_;
-}
-
-TLSSession::TLSSession(SSL* ssl) : ssl_(ssl) {
-  // Nothing to do.
-}
-
-absl::StatusOr<TLSClientSession> TLSClientSession::Create(TLSContext* ctx) {
-  SSL* ssl = SSL_new(ctx->MutableOSSLContext());
-
-  if (!ssl) {
-    return absl::InternalError(tls_internal::StringOSSLError(
-      "failed to create OpenSSL session"
-    ));
-  }
-
-  // Configure to verify server certificate
-  SSL_set_verify(ssl, SSL_VERIFY_PEER, NULL);
-
-  return TLSClientSession(ssl);
-}
-
-TLSClientSession::TLSClientSession(SSL* ssl) : TLSSession(ssl) {
-  // Nothing to do.
-}
-
-absl::StatusOr<TLSServerSession> TLSServerSession::Create(TLSContext* ctx) {
-  SSL* ssl = SSL_new(ctx->MutableOSSLContext());
-
-  if (!ssl) {
-    return absl::InternalError(tls_internal::StringOSSLError(
-      "failed to create OpenSSL session"
-    ));
-  }
-
-  // We won't request client certificates by default.
-  SSL_set_verify(ssl, SSL_VERIFY_NONE, NULL);
-
-  return TLSServerSession(ssl);
-}
-
-TLSServerSession::TLSServerSession(SSL* ssl) : TLSSession(ssl) {
-  // Nothing to do.
 }
 
 TLSContext::~TLSContext() {
