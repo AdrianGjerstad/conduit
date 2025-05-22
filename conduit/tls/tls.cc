@@ -98,12 +98,7 @@ absl::StatusOr<TLSClientSession> TLSClientSession::Create(TLSContext* ctx) {
   }
 
   // Configure to verify server certificate
-  if (!SSL_set_verify(ssl, SSL_VERIFY_PEER, NULL)) {
-    SSL_free(ssl);
-    return absl::InternalError(tls_internal::StringOSSLError(
-      "failed to require server certificate verification"
-    ));
-  }
+  SSL_set_verify(ssl, SSL_VERIFY_PEER, NULL);
 
   return TLSClientSession(ssl);
 }
@@ -122,12 +117,7 @@ absl::StatusOr<TLSServerSession> TLSServerSession::Create(TLSContext* ctx) {
   }
 
   // We won't request client certificates by default.
-  if (!SSL_set_verify(ssl, SSL_VERIFY_NONE, NULL)) {
-    SSL_free(ssl);
-    return absl::InternalError(tls_internal::StringOSSLError(
-      "failed to allow clients to remain anonymous by default"
-    ));
-  }
+  SSL_set_verify(ssl, SSL_VERIFY_NONE, NULL);
 
   return TLSServerSession(ssl);
 }
