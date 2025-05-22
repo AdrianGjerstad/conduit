@@ -90,8 +90,8 @@ public:
   static absl::StatusOr<TLSServerSession> Create(TLSContext* ctx);
 
 private:
-  TLSClientSession(SSL* ssl);
-}
+  TLSServerSession(SSL* ssl);
+};
 
 // Represents an object that owns in-memory-cached certificates and keys for use
 // in authentication and encryption over the wire.
