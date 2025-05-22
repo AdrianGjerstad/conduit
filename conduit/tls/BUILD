@@ -21,8 +21,6 @@ cc_library(
         "//conduit/tls/internal:ossl_err",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",
-        "@abseil-cpp//absl/strings:str_format",
-        "@abseil-cpp//absl/strings:string_view",
         "@openssl//:ssl",
     ],
     visibility = ["//visibility:public"],

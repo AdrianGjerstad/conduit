@@ -43,6 +43,40 @@
 
 namespace cd {
 
+class TLSContext;
+
+// Represents an object that owns an OpenSSL "SSL" session.
+class TLSSession {
+public:
+  // Not default constructible. Use Create.
+  TLSSession() = delete;
+
+  ~TLSSession();
+
+  // Creates a TLSSession from an already created context.
+  //
+  // This method is not recommended for typical use, as it only allocates and
+  // returns an SSL session, but does not configure it. Use
+  // TLSContext::NewClientSession and TLSContext::NewServerSession instead.
+  static absl::StatusOr<TLSSession> Create(TLSContext* ctx);
+
+  // Copy constructible and copy assignable.
+  TLSSession(const TLSSession& other);
+  TLSSession& operator=(const TLSSession& other);
+
+  // Retrieves a C-style reference to the encapsulated SSL.
+  //
+  // It is not recommended for users of Conduit to interact with OpenSSL types
+  // directly.
+  const SSL* OSSLSession() const;
+  SSL* MutableOSSLSession();
+
+private:
+  TLSSession(SSL* ssl);
+
+  SSL* ssl_;
+};
+
 // Represents an object that owns in-memory-cached certificates and keys for use
 // in authentication and encryption over the wire.
 //
@@ -65,8 +99,17 @@ public:
   TLSContext& operator=(const TLSContext& other);
 
   // Retrieves a C-style reference to the encapsulated SSL_CTX.
+  //
+  // It is not recommended for users of Conduit to interact with OpenSSL types
+  // directly.
   const SSL_CTX* OSSLContext() const;
   SSL_CTX* MutableOSSLContext();
+
+  // Allocates and configures a new session for use in clients.
+  absl::StatusOr<TLSSession> NewClientSession();
+
+  // Allocates and configures a new session for use in servers.
+  absl::StatusOr<TLSSession> NewServerSession();
 
 private:
   // Creates a context that encapsulates an SSL_CTX (ownership is transferred).
