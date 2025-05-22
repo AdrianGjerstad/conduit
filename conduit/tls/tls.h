@@ -53,13 +53,6 @@ public:
 
   ~TLSSession();
 
-  // Creates a TLSSession from an already created context.
-  //
-  // This method is not recommended for typical use, as it only allocates and
-  // returns an SSL session, but does not configure it. Use
-  // TLSContext::NewClientSession and TLSContext::NewServerSession instead.
-  static absl::StatusOr<TLSSession> Create(TLSContext* ctx);
-
   // Copy constructible and copy assignable.
   TLSSession(const TLSSession& other);
   TLSSession& operator=(const TLSSession& other);
@@ -71,11 +64,34 @@ public:
   const SSL* OSSLSession() const;
   SSL* MutableOSSLSession();
 
-private:
+protected:
   TLSSession(SSL* ssl);
 
+private:
   SSL* ssl_;
 };
+
+// Represents a TLS client session with configuration and operations specific to
+// clients.
+class TLSClientSession : public TLSSession {
+public:
+  // Creates a TLSClientSession from an already created context.
+  static absl::StatusOr<TLSClientSession> Create(TLSContext* ctx);
+
+private:
+  TLSClientSession(SSL* ssl);
+};
+
+// Represents a TLS server session with configuration and operations specific to
+// servers.
+class TLSServerSession : public TLSSession {
+public:
+  // Creates a TLSServerSession from an already created context.
+  static absl::StatusOr<TLSServerSession> Create(TLSContext* ctx);
+
+private:
+  TLSClientSession(SSL* ssl);
+}
 
 // Represents an object that owns in-memory-cached certificates and keys for use
 // in authentication and encryption over the wire.
@@ -104,12 +120,6 @@ public:
   // directly.
   const SSL_CTX* OSSLContext() const;
   SSL_CTX* MutableOSSLContext();
-
-  // Allocates and configures a new session for use in clients.
-  absl::StatusOr<TLSSession> NewClientSession();
-
-  // Allocates and configures a new session for use in servers.
-  absl::StatusOr<TLSSession> NewServerSession();
 
 private:
   // Creates a context that encapsulates an SSL_CTX (ownership is transferred).

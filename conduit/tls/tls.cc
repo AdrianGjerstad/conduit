@@ -52,18 +52,6 @@ TLSSession::~TLSSession() {
   }
 }
 
-absl::StatusOr<TLSSession> TLSSession::Create(TLSContext* ctx) {
-  SSL* ssl = SSL_new(ctx->MutableOSSLContext());
-
-  if (!ssl) {
-    return absl::InternalError(tls_internal::StringOSSLError(
-      "failed to create OpenSSL session"
-    ));
-  }
-
-  return TLSSession(ssl);
-}
-
 TLSSession::TLSSession(const TLSSession& other) : ssl_(other.ssl_) {
   if (ssl_) {
     SSL_up_ref(ssl_);
@@ -100,6 +88,38 @@ TLSSession::TLSSession(SSL* ssl) : ssl_(ssl) {
   // Nothing to do.
 }
 
+absl::StatusOr<TLSClientSession> TLSClientSession::Create(TLSContext* ctx) {
+  SSL* ssl = SSL_new(ctx->MutableOSSLContext());
+
+  if (!ssl) {
+    return absl::InternalError(tls_internal::StringOSSLError(
+      "failed to create OpenSSL session"
+    ));
+  }
+
+  return TLSClientSession(ssl);
+}
+
+TLSClientSession::TLSClientSession(SSL* ssl) : TLSSession(ssl) {
+  // Nothing to do.
+}
+
+absl::StatusOr<TLSServerSession> TLSServerSession::Create(TLSContext* ctx) {
+  SSL* ssl = SSL_new(ctx->MutableOSSLContext());
+
+  if (!ssl) {
+    return absl::InternalError(tls_internal::StringOSSLError(
+      "failed to create OpenSSL session"
+    ));
+  }
+
+  return TLSServerSession(ssl);
+}
+
+TLSServerSession::TLSServerSession(SSL* ssl) : TLSSession(ssl) {
+  // Nothing to do.
+}
+
 TLSContext::~TLSContext() {
   if (ctx_) {
     SSL_CTX_free(ctx_);
@@ -121,9 +141,9 @@ absl::StatusOr<TLSContext> TLSContext::Create() {
   // Configure the CTX to be production-ready by default. With the goal if
   // minimizing the memory that OpenSSL uses here, SSL_CTX will contain all of
   // the configuration shared between both clients and servers, including a set
-  // of trusted CAs and algorithms. Users should use
-  // TLSContext::NewClientSession or TLSContext::NewServerSession to allocate
-  // SSL objects with the correct configuration for that context.
+  // of trusted CAs and algorithms. Users should use TLSClientSession::Create or
+  // TLSServerSession::Create to allocate SSL objects with the correct
+  // configuration for that context.
 
   // TLSv1.1 and below are deprecated and should not be used in production code.
   if (!SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION)) {
@@ -198,28 +218,6 @@ const SSL_CTX* TLSContext::OSSLContext() const {
 
 SSL_CTX* TLSContext::MutableOSSLContext() {
   return ctx_;
-}
-
-absl::StatusOr<TLSSession> TLSContext::NewClientSession() {
-  absl::StatusOr<TLSSession> sess_s = TLSSession::Create(this);
-  if (!sess_s.ok()) {
-    return sess_s.status();
-  }
-
-  auto sess = sess_s.value();
-
-  return sess;
-}
-
-absl::StatusOr<TLSSession> TLSContext::NewServerSession() {
-  absl::StatusOr<TLSSession> sess_s = TLSSession::Create(this);
-  if (!sess_s.ok()) {
-    return sess_s.status();
-  }
-
-  auto sess = sess_s.value();
-
-  return sess;
 }
 
 TLSContext::TLSContext(SSL_CTX* ctx) : ctx_(ctx) {
